@@ -1,5 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
+import { AUTH_ENABLED } from '@/lib/auth-config'
+
 /**
  * Routes that do NOT require a Clerk session:
  *  - /display/*          read-only station screens, gated by their own signed token
@@ -15,8 +17,11 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
 ])
 
+// clerkMiddleware always runs (so `auth()` works in server code), but it only
+// enforces a login when AUTH_ENABLED. With auth disabled the whole app is open
+// — see src/lib/auth-config.ts.
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
+  if (AUTH_ENABLED && !isPublicRoute(req)) {
     await auth.protect()
   }
 })

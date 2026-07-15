@@ -23,6 +23,7 @@ import {
   SidebarSpacer,
 } from '@/components/sidebar'
 import { SidebarLayout } from '@/components/sidebar-layout'
+import { AUTH_ENABLED } from '@/lib/auth-config'
 
 const nav = [
   { href: '/', label: 'Overview', icon: ChartBarIcon },
@@ -44,7 +45,7 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
         <Navbar>
           <NavbarSpacer />
           <NavbarSection>
-            <UserButton />
+            {AUTH_ENABLED ? <UserButton /> : <span className="text-xs text-zinc-400">dev · no auth</span>}
           </NavbarSection>
         </Navbar>
       }
@@ -72,6 +73,12 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
         </Sidebar>
       }
     >
+      {!AUTH_ENABLED && (
+        <div className="mb-6 rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-800 ring-1 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20">
+          ⚠ Auth is disabled — anyone can access this app. Set{' '}
+          <code className="font-mono">NEXT_PUBLIC_ENABLE_AUTH=true</code> to require sign-in before production use.
+        </div>
+      )}
       {/* Fade content between routes; keyed by pathname. */}
       <AnimatePresence mode="wait">
         <motion.div
