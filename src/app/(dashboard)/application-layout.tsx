@@ -8,6 +8,7 @@ import {
   TvIcon,
   UsersIcon,
 } from '@heroicons/react/20/solid'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
 
 import { Navbar, NavbarSection, NavbarSpacer } from '@/components/navbar'
@@ -35,6 +36,9 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   return (
+    // reducedMotion="user" makes every Motion animation below (including
+    // Catalyst's own sidebar transitions) honor the OS prefers-reduced-motion.
+    <MotionConfig reducedMotion="user">
     <SidebarLayout
       navbar={
         <Navbar>
@@ -68,7 +72,19 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
         </Sidebar>
       }
     >
-      {children}
+      {/* Fade content between routes; keyed by pathname. */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={pathname}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          {children}
+        </motion.div>
+      </AnimatePresence>
     </SidebarLayout>
+    </MotionConfig>
   )
 }
