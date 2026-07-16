@@ -3,7 +3,8 @@
 import * as Headless from '@headlessui/react'
 import { motion } from 'motion/react'
 import React, { useState } from 'react'
-import { NavbarItem, NavbarLabel } from './navbar'
+import { Button } from './button'
+import { NavbarItem } from './navbar'
 
 function OpenMenuIcon() {
   return (
@@ -64,21 +65,19 @@ export function SidebarLayout({
         {sidebar}
       </MobileSidebar>
 
-      {/* Navbar on mobile */}
-      <header className="flex items-center px-4 lg:hidden">
-        <div className="py-2.5">
-          <NavbarItem onClick={() => setShowSidebar(true)} aria-label="Open navigation menu">
-            <OpenMenuIcon />
-            <NavbarLabel>Menu</NavbarLabel>
-          </NavbarItem>
-        </div>
+      {/* Navbar on mobile: a clear, flush-left Menu button + the navbar. */}
+      <header className="flex items-center gap-2 py-2.5 pr-4 pl-2 lg:hidden">
+        <Button outline onClick={() => setShowSidebar(true)} aria-label="Open navigation menu">
+          <OpenMenuIcon />
+          Menu
+        </Button>
         <div className="min-w-0 flex-1">{navbar}</div>
       </header>
 
       {/* Content */}
       <main className="flex flex-1 flex-col pb-2 lg:min-w-0 lg:pt-2 lg:pr-2 lg:pl-64">
         <div className="grow p-6 lg:rounded-lg lg:bg-white lg:p-10 lg:shadow-xs lg:ring-1 lg:ring-zinc-950/5 dark:lg:bg-zinc-900 dark:lg:ring-white/10">
-          <div className="mx-auto max-w-6xl">{children}</div>
+          <div className="mx-auto max-w-[85rem]">{children}</div>
         </div>
       </main>
     </div>

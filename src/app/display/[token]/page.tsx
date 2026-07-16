@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation'
 
+import { getStationAssignmentNames } from '@/lib/floor/display'
 import { verifyDisplayToken } from '@/lib/pairing/token'
 import { createServiceRoleClient } from '@/lib/supabase/server'
+import { DisplayLive } from './display-live'
 
 export const metadata = { title: 'Station Display' }
 
@@ -23,12 +25,7 @@ export default async function StationDisplayPage({ params }: { params: Promise<{
   // Reject tokens revoked by bumping the station's token_version.
   if (!station || station.token_version !== claims.tokenVersion) notFound()
 
-  return (
-    <main className="flex min-h-svh flex-col items-center justify-center bg-zinc-950 text-white">
-      <h1 className="text-6xl font-semibold">{String(station.name ?? 'Station')}</h1>
-      <p className="mt-4 text-2xl text-zinc-400">
-        Read-only display · live updates via Supabase Realtime
-      </p>
-    </main>
-  )
+  const workers = await getStationAssignmentNames(claims.stationId)
+
+  return <DisplayLive token={token} initialName={String(station.name ?? 'Station')} initialWorkers={workers} />
 }

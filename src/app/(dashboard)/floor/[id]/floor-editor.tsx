@@ -25,8 +25,12 @@ import type { PlanDetail, StationAssignment, StationOption, Worker } from '@/lib
 import { clamp, type FloorShape, rollUp, snap } from '@/lib/floor/geometry'
 import { useSupabaseBrowserClient } from '@/lib/supabase/client'
 
-const DEFAULT_W = 1200
-const DEFAULT_H = 800
+// Large virtual canvas so there's plenty of room to spread areas/stations out.
+// The canvas renders at least MIN_CANVAS_PX wide and scrolls inside a tall
+// viewport, so it's genuinely bigger both ways regardless of screen size.
+const DEFAULT_W = 2400
+const DEFAULT_H = 1500
+const MIN_CANVAS_PX = 1600
 const GRID = 8
 const MIN_SIZE = 40
 const AREA_COLOR = '#38bdf8'
@@ -279,7 +283,7 @@ export function FloorEditor({
   const stationShapes = shapes.filter((s) => s.kind === 'station')
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto max-w-none">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -307,9 +311,9 @@ export function FloorEditor({
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         {/* Canvas */}
-        <div>
+        <div className="min-w-0">
           <div className="mb-3 flex gap-2">
             <Button color="sky" onClick={() => addShape('area')}>
               <Square className="size-4" /> Add area
@@ -319,11 +323,12 @@ export function FloorEditor({
             </Button>
           </div>
 
-          <div className="overflow-auto rounded-xl bg-zinc-100 ring-1 ring-zinc-950/10 dark:bg-zinc-800 dark:ring-white/10">
+          <div className="max-h-[calc(100svh-11rem)] overflow-auto rounded-xl bg-zinc-100 ring-1 ring-zinc-950/10 dark:bg-zinc-800 dark:ring-white/10">
             <svg
               ref={svgRef}
               viewBox={`0 0 ${W} ${H}`}
-              className="block h-auto w-full touch-none select-none"
+              className="block h-auto touch-none select-none"
+              style={{ width: '100%', minWidth: MIN_CANVAS_PX }}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerDown={() => setSelectedId(null)}
