@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, ImageUp, Square, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Copy, ImageUp, Square, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 
@@ -73,9 +73,8 @@ export function FloorEditor({
   const W = plan.imageWidth ?? DEFAULT_W
   const H = plan.imageHeight ?? DEFAULT_H
   const selected = shapes.find((s) => s.id === selectedId) ?? null
-  const totals = rollUp(shapes)
 
-  // Assignments grouped by real station id, for canvas counts + the inspector.
+  // Assignments grouped by real station id, for canvas names + the inspector.
   const assignmentsByStation = useMemo(() => {
     const map = new Map<string, StationAssignment[]>()
     for (const a of assignments) {
@@ -85,6 +84,14 @@ export function FloorEditor({
     }
     return map
   }, [assignments])
+
+  const assignedCountByStation = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const [sid, list] of assignmentsByStation) m.set(sid, list.length)
+    return m
+  }, [assignmentsByStation])
+
+  const totals = rollUp(shapes, assignedCountByStation)
 
   // Live updates: refetch assignments whenever another client changes them.
   // Best-effort — falls back to optimistic local updates when Realtime is
@@ -210,6 +217,39 @@ export function FloorEditor({
     setSelectedId(null)
     startTransition(async () => {
       await deleteShape(id)
+    })
+  }
+
+  function duplicateSelected() {
+    if (!selected) return
+    const src = selected
+    const x = clamp(snap(src.x + GRID * 2, GRID), 0, W - src.w)
+    const y = clamp(snap(src.y + GRID * 2, GRID), 0, H - src.h)
+    startTransition(async () => {
+      // Copy geometry/label/color/headcount, but not the station link, so the
+      // copy doesn't double-link (and double-count) the same station.
+      const res = await createShape(plan.id, {
+        kind: src.kind,
+        shape: src.shape,
+        x,
+        y,
+        w: src.w,
+        h: src.h,
+        label: src.label,
+        color: src.color,
+        plannedHeadcount: src.plannedHeadcount,
+      })
+      if (!res.ok) return
+      const copy: FloorShape = {
+        ...src,
+        id: res.data.id,
+        x,
+        y,
+        stationId: null,
+        sortOrder: shapes.length,
+      }
+      setShapes((prev) => [...prev, copy])
+      setSelectedId(copy.id)
     })
   }
 
@@ -369,7 +409,9 @@ export function FloorEditor({
                   key={s.id}
                   shape={s}
                   selected={s.id === selectedId}
-                  assignedCount={s.stationId ? (assignmentsByStation.get(s.stationId)?.length ?? 0) : null}
+                  assignedNames={
+                    s.stationId ? (assignmentsByStation.get(s.stationId) ?? []).map((a) => a.fullName) : null
+                  }
                   onDown={(e) => beginDrag(e, s, 'move')}
                   onResize={(e) => beginDrag(e, s, 'resize')}
                 />
@@ -395,6 +437,7 @@ export function FloorEditor({
               onChange={(patch) => patchLocal(selected.id, patch)}
               onCommit={(patch) => persist(selected.id, patch)}
               onDelete={removeSelected}
+              onDuplicate={() => duplicateSelected()}
               onAssign={(worker) => selected.stationId && doAssign(selected.stationId, worker)}
               onCreateAndAssign={(name) => selected.stationId && doCreateAndAssign(selected.stationId, name)}
               onUnassign={doUnassign}
@@ -405,7 +448,7 @@ export function FloorEditor({
             </div>
           )}
 
-          <RollUpPanel totals={totals} />
+          <RollUpPanel totals={totals} onSelectArea={setSelectedId} />
         </div>
       </div>
     </div>
@@ -418,19 +461,31 @@ export function FloorEditor({
 function ShapeNode({
   shape,
   selected,
-  assignedCount,
+  assignedNames,
   onDown,
   onResize,
 }: {
   shape: FloorShape
   selected: boolean
-  assignedCount?: number | null
+  // null => not a linked station (show planned only); [] => linked, nobody yet.
+  assignedNames?: string[] | null
   onDown: (e: React.PointerEvent) => void
   onResize: (e: React.PointerEvent) => void
 }) {
   const isArea = shape.kind === 'area'
   const cx = shape.x + shape.w / 2
   const cy = shape.y + shape.h / 2
+
+  // Station name layout: how many first names fit stacked below the count line.
+  const firstNames = (assignedNames ?? []).map((n) => n.split(' ')[0] || n)
+  const capacity = Math.max(0, Math.floor((shape.h - 52) / 16))
+  const showAll = firstNames.length <= capacity
+  const shownNames = showAll ? firstNames : firstNames.slice(0, Math.max(0, capacity - 1))
+  const overflow = firstNames.length - shownNames.length
+  const countText =
+    assignedNames == null
+      ? `${shape.plannedHeadcount} planned`
+      : `${assignedNames.length} / ${shape.plannedHeadcount} staffed`
 
   return (
     <g className="cursor-move" onPointerDown={onDown}>
@@ -467,31 +522,30 @@ function ShapeNode({
           {shape.label}
         </text>
       ) : (
-        <text
-          x={cx}
-          y={cy - 2}
-          textAnchor="middle"
-          className="fill-white"
-          fontSize={15}
-          fontWeight={600}
-          style={{ pointerEvents: 'none' }}
-        >
-          {shape.label}
-        </text>
-      )}
-      {!isArea && (
-        <text
-          x={cx}
-          y={cy + 18}
-          textAnchor="middle"
-          className="fill-white/90"
-          fontSize={13}
-          style={{ pointerEvents: 'none' }}
-        >
-          {assignedCount == null
-            ? `${shape.plannedHeadcount} planned`
-            : `${assignedCount} / ${shape.plannedHeadcount} staffed`}
-        </text>
+        <g style={{ pointerEvents: 'none' }}>
+          <text x={cx} y={shape.y + 22} textAnchor="middle" className="fill-white" fontSize={15} fontWeight={600}>
+            {shape.label}
+          </text>
+          <text x={cx} y={shape.y + 40} textAnchor="middle" className="fill-white/90" fontSize={13}>
+            {countText}
+          </text>
+          {shownNames.map((n, i) => (
+            <text key={i} x={cx} y={shape.y + 58 + i * 16} textAnchor="middle" className="fill-white/95" fontSize={13}>
+              {n}
+            </text>
+          ))}
+          {overflow > 0 && (
+            <text
+              x={cx}
+              y={shape.y + 58 + shownNames.length * 16}
+              textAnchor="middle"
+              className="fill-white/70"
+              fontSize={12}
+            >
+              +{overflow} more
+            </text>
+          )}
+        </g>
       )}
 
       {/* Selection outline + resize handle */}
@@ -534,6 +588,7 @@ function ShapeInspector({
   onChange,
   onCommit,
   onDelete,
+  onDuplicate,
   onAssign,
   onCreateAndAssign,
   onUnassign,
@@ -545,6 +600,7 @@ function ShapeInspector({
   onChange: (patch: Partial<FloorShape>) => void
   onCommit: (patch: Parameters<typeof updateShape>[1]) => void
   onDelete: () => void
+  onDuplicate: () => void
   onAssign: (worker: Worker) => void
   onCreateAndAssign: (fullName: string) => void
   onUnassign: (workerId: string) => void
@@ -555,9 +611,14 @@ function ShapeInspector({
         <span className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
           {shape.kind === 'area' ? 'Area' : 'Station'}
         </span>
-        <Button plain onClick={onDelete} aria-label="Delete shape">
-          <Trash2 className="size-4 text-red-500" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button plain onClick={onDuplicate} aria-label="Duplicate shape">
+            <Copy className="size-4" />
+          </Button>
+          <Button plain onClick={onDelete} aria-label="Delete shape">
+            <Trash2 className="size-4 text-red-500" />
+          </Button>
+        </div>
       </div>
 
       <Field>
@@ -580,6 +641,25 @@ function ShapeInspector({
           className="h-9 w-full cursor-pointer rounded-lg border border-zinc-950/10 bg-white dark:border-white/10 dark:bg-zinc-800"
           aria-label="Shape color"
         />
+      </Field>
+
+      <Field>
+        <Label>Shape</Label>
+        <div className="flex gap-2">
+          {(['rect', 'circle'] as const).map((g) => (
+            <Button
+              key={g}
+              {...(shape.shape === g ? { color: 'blue' as const } : { outline: true })}
+              onClick={() => {
+                onChange({ shape: g })
+                onCommit({ shape: g })
+              }}
+              className="flex-1 justify-center"
+            >
+              {g === 'rect' ? 'Rectangle' : 'Circle'}
+            </Button>
+          ))}
+        </div>
       </Field>
 
       {shape.kind === 'station' && (
@@ -754,36 +834,55 @@ function AssignmentPanel({
 // ---------------------------------------------------------------------------
 // Roll-up
 // ---------------------------------------------------------------------------
-function RollUpPanel({ totals }: { totals: ReturnType<typeof rollUp> }) {
+// Green when fully/over staffed, amber when short, zinc when nothing planned.
+function coverageClass(assigned: number, planned: number): string {
+  if (planned === 0) return 'text-zinc-500'
+  if (assigned >= planned) return 'text-emerald-600 dark:text-emerald-400'
+  return 'text-amber-600 dark:text-amber-400'
+}
+
+function RollUpPanel({
+  totals,
+  onSelectArea,
+}: {
+  totals: ReturnType<typeof rollUp>
+  onSelectArea: (areaId: string) => void
+}) {
   return (
     <div className="rounded-xl bg-white p-5 ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
-      <div className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">Planned labor</div>
+      <div className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">Labor coverage</div>
       <div className="mt-3 flex items-baseline gap-2">
-        <span className="text-3xl font-semibold text-zinc-950 tabular-nums dark:text-white">
-          {totals.totalHeadcount}
+        <span className={`text-3xl font-semibold tabular-nums ${coverageClass(totals.totalAssigned, totals.totalHeadcount)}`}>
+          {totals.totalAssigned} / {totals.totalHeadcount}
         </span>
         <span className="text-sm text-zinc-500">
-          across {totals.totalStations} station{totals.totalStations !== 1 ? 's' : ''}
+          staffed across {totals.totalStations} station{totals.totalStations !== 1 ? 's' : ''}
         </span>
       </div>
 
-      <ul className="mt-4 space-y-2">
+      <ul className="mt-4 space-y-1">
         {totals.perArea.map((a) => (
-          <li key={a.areaId} className="flex items-center justify-between text-sm">
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="inline-block size-3 shrink-0 rounded-sm" style={{ backgroundColor: a.color }} />
-              <span className="truncate text-zinc-700 dark:text-zinc-200">{a.label || 'Untitled area'}</span>
-            </span>
-            <span className="shrink-0 text-zinc-500 tabular-nums">
-              {a.headcount} · {a.stationCount} st
-            </span>
+          <li key={a.areaId}>
+            <button
+              type="button"
+              onClick={() => onSelectArea(a.areaId)}
+              className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-zinc-100 dark:hover:bg-white/5"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="inline-block size-3 shrink-0 rounded-sm" style={{ backgroundColor: a.color }} />
+                <span className="truncate text-zinc-700 dark:text-zinc-200">{a.label || 'Untitled area'}</span>
+              </span>
+              <span className={`shrink-0 tabular-nums ${coverageClass(a.assigned, a.headcount)}`}>
+                {a.assigned} / {a.headcount}
+              </span>
+            </button>
           </li>
         ))}
         {totals.unassigned.stationCount > 0 && (
-          <li className="flex items-center justify-between text-sm">
+          <li className="flex items-center justify-between px-2 py-1 text-sm">
             <span className="text-zinc-500">Outside any area</span>
-            <span className="text-zinc-500 tabular-nums">
-              {totals.unassigned.headcount} · {totals.unassigned.stationCount} st
+            <span className={`tabular-nums ${coverageClass(totals.unassigned.assigned, totals.unassigned.headcount)}`}>
+              {totals.unassigned.assigned} / {totals.unassigned.headcount}
             </span>
           </li>
         )}
