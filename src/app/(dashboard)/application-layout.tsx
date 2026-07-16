@@ -65,9 +65,7 @@ export function ApplicationLayout({
       navbar={
         <Navbar>
           <NavbarSpacer />
-          <NavbarSection>
-            {AUTH_ENABLED ? <UserButton /> : <span className="text-xs text-zinc-400">dev · no auth</span>}
-          </NavbarSection>
+          <NavbarSection>{AUTH_ENABLED ? <UserButton /> : null}</NavbarSection>
         </Navbar>
       }
       sidebar={
@@ -129,10 +127,16 @@ export function ApplicationLayout({
         </Sidebar>
       }
     >
+      {/* Auth-disabled indicator: a small, non-disruptive yellow label pinned to
+          the upper-right on every view (fixed, so it never pushes content). */}
       {!AUTH_ENABLED && (
-        <div className="mb-6 rounded-md bg-amber-100 px-4 py-2 text-sm text-amber-800 ring-1 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-400/20">
-          ⚠ Auth is disabled -- anyone can access this app. Set{' '}
-          <code className="font-mono">NEXT_PUBLIC_ENABLE_AUTH=true</code> to require sign-in before production use.
+        <div className="pointer-events-none fixed top-2 right-2 z-40 sm:top-3 sm:right-3">
+          <span
+            title="Auth is disabled -- anyone can access this app. Set NEXT_PUBLIC_ENABLE_AUTH=true to require sign-in before production use."
+            className="pointer-events-auto rounded-full bg-yellow-300 px-2.5 py-1 text-xs font-medium text-yellow-950 shadow-sm ring-1 ring-yellow-500/40 dark:bg-yellow-400/20 dark:text-yellow-200 dark:ring-yellow-400/30"
+          >
+            ⚠ Auth disabled
+          </span>
         </div>
       )}
       {/* Fade content between routes; keyed by pathname. */}
