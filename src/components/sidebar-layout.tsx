@@ -3,7 +3,7 @@
 import * as Headless from '@headlessui/react'
 import { motion } from 'motion/react'
 import React, { useState } from 'react'
-import { NavbarItem } from './navbar'
+import { NavbarItem, NavbarLabel } from './navbar'
 
 function OpenMenuIcon() {
   return (
@@ -67,8 +67,9 @@ export function SidebarLayout({
       {/* Navbar on mobile */}
       <header className="flex items-center px-4 lg:hidden">
         <div className="py-2.5">
-          <NavbarItem onClick={() => setShowSidebar(true)} aria-label="Open navigation">
+          <NavbarItem onClick={() => setShowSidebar(true)} aria-label="Open navigation menu">
             <OpenMenuIcon />
+            <NavbarLabel>Menu</NavbarLabel>
           </NavbarItem>
         </div>
         <div className="min-w-0 flex-1">{navbar}</div>
