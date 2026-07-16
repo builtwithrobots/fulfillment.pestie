@@ -42,6 +42,18 @@ export type StationOption = {
   lineName: string | null
 }
 
+export type Worker = {
+  id: string
+  fullName: string
+}
+
+export type StationAssignment = {
+  assignmentId: string
+  stationId: string
+  workerId: string
+  fullName: string
+}
+
 function mapShape(row: {
   id: string
   kind: FloorShape['kind']
@@ -161,5 +173,42 @@ export async function listStationOptions(): Promise<StationOption[]> {
     id: s.id,
     name: s.name,
     lineName: s.line_id ? (lineName.get(s.line_id) ?? null) : null,
+  }))
+}
+
+/** The active worker roster, alphabetical. */
+export async function listWorkers(): Promise<Worker[]> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+
+  const { data, error } = await supabase
+    .from('workers')
+    .select('id, full_name')
+    .eq('active', true)
+    .order('full_name', { ascending: true })
+  if (error) throw error
+
+  return (data ?? []).map((w) => ({ id: w.id, fullName: w.full_name }))
+}
+
+/** Every station assignment with the worker's name, keyed by real station id. */
+export async function listAssignments(): Promise<StationAssignment[]> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+
+  // Two selects + in-code join (hand-written types don't model relationships).
+  const [{ data: rows, error }, { data: workers, error: workersError }] = await Promise.all([
+    supabase.from('station_assignments').select('id, station_id, worker_id').order('assigned_at', { ascending: true }),
+    supabase.from('workers').select('id, full_name'),
+  ])
+  if (error) throw error
+  if (workersError) throw workersError
+
+  const nameOf = new Map((workers ?? []).map((w) => [w.id, w.full_name]))
+  return (rows ?? []).map((r) => ({
+    assignmentId: r.id,
+    stationId: r.station_id,
+    workerId: r.worker_id,
+    fullName: nameOf.get(r.worker_id) ?? 'Unknown',
   }))
 }
