@@ -1,13 +1,20 @@
 /* Pestie Fulfillment Ops — minimal PWA service worker.
  *
- * Deliberately conservative: it ONLY caches versioned static assets
- * (Next.js build output and app icons) with stale-while-revalidate. It never
- * caches HTML documents, API responses, or anything user-specific, so a signed
- * out user can never be served another user's cached page. */
+ * Caches ONLY Next.js build output under /_next/static/, which is
+ * content-hashed and immutable: a new deploy ships new filenames, so cached
+ * entries can never go stale or serve an "old view".
+ *
+ * It deliberately does NOT cache icons, the manifest, HTML documents, or API
+ * responses. Icons are mutable (the app has been rebranded), so caching them
+ * would pin an old home-screen/tab icon after an update — everything except
+ * hashed chunks is always fetched fresh from the network.
+ *
+ * The cache name is versioned; bump it to force every client to drop the old
+ * cache on the next activation. */
 
-const CACHE = 'pestie-static-v1'
+const CACHE = 'pestie-static-v2'
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting()
 })
 
@@ -15,18 +22,15 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
+      // Drop every cache that isn't the current version (purges v1, which used
+      // to hold now-stale icons).
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   )
 })
 
-function isStaticAsset(url) {
-  return (
-    url.origin === self.location.origin &&
-    (url.pathname.startsWith('/_next/static/') ||
-      url.pathname.startsWith('/icon-') ||
-      url.pathname === '/apple-touch-icon.png')
-  )
+function isImmutableAsset(url) {
+  return url.origin === self.location.origin && url.pathname.startsWith('/_next/static/')
 }
 
 self.addEventListener('fetch', (event) => {
@@ -34,7 +38,7 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return
 
   const url = new URL(request.url)
-  if (!isStaticAsset(url)) return // network handles everything else
+  if (!isImmutableAsset(url)) return // network handles everything else (icons, HTML, API)
 
   event.respondWith(
     caches.open(CACHE).then(async (cache) => {
