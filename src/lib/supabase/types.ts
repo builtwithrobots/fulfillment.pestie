@@ -9,6 +9,9 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type AppRole = 'director' | 'supervisor' | 'floor_lead' | 'executive'
 
+export type FloorShapeKind = 'area' | 'station'
+export type FloorShapeGeometry = 'rect' | 'circle'
+
 type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
   Row: Row
   Insert: Insert
@@ -74,6 +77,34 @@ export type Database = {
         study_id: string
         duration_ms: number
         recorded_at: string
+      }>
+      floor_plans: Table<{
+        id: string
+        name: string
+        image_path: string | null
+        image_width: number | null
+        image_height: number | null
+        is_active: boolean
+        created_at: string
+        updated_at: string
+      }>
+      floor_shapes: Table<{
+        id: string
+        plan_id: string
+        kind: FloorShapeKind
+        shape: FloorShapeGeometry
+        x: number
+        y: number
+        w: number
+        h: number
+        rotation: number
+        label: string
+        color: string
+        station_id: string | null
+        planned_headcount: number
+        sort_order: number
+        created_at: string
+        updated_at: string
       }>
     }
     Views: Record<string, never>
