@@ -64,44 +64,59 @@ export type AreaRollUp = {
   label: string
   color: string
   headcount: number
+  assigned: number
   stationCount: number
 }
 
 export type RollUp = {
   /** Planned headcount across every station on the plan. */
   totalHeadcount: number
+  /** Assigned people across every linked station on the plan. */
+  totalAssigned: number
   totalStations: number
   perArea: AreaRollUp[]
   /** Stations that fall outside every area. */
-  unassigned: { headcount: number; stationCount: number }
+  unassigned: { headcount: number; assigned: number; stationCount: number }
 }
 
-/** Sum planned headcount per area (by geometric containment) and plan-wide. */
-export function rollUp(shapes: FloorShape[]): RollUp {
+/**
+ * Sum planned headcount per area (by geometric containment) and plan-wide.
+ * Pass `assignedByStationId` (real station id -> assigned count) to also roll up
+ * live staffing coverage; omit it and assigned totals are zero.
+ */
+export function rollUp(shapes: FloorShape[], assignedByStationId?: Map<string, number>): RollUp {
   const areas = shapes.filter((s) => s.kind === 'area')
   const stations = shapes.filter((s) => s.kind === 'station')
 
   const perArea = new Map<string, AreaRollUp>(
-    areas.map((a) => [a.id, { areaId: a.id, label: a.label, color: a.color, headcount: 0, stationCount: 0 }])
+    areas.map((a) => [a.id, { areaId: a.id, label: a.label, color: a.color, headcount: 0, assigned: 0, stationCount: 0 }])
   )
-  const unassigned = { headcount: 0, stationCount: 0 }
+  const unassigned = { headcount: 0, assigned: 0, stationCount: 0 }
+
+  const assignedOf = (st: FloorShape) => (st.stationId ? (assignedByStationId?.get(st.stationId) ?? 0) : 0)
 
   let totalHeadcount = 0
+  let totalAssigned = 0
   for (const st of stations) {
+    const assigned = assignedOf(st)
     totalHeadcount += st.plannedHeadcount
+    totalAssigned += assigned
     const areaId = areaOfStation(st, areas)
     const bucket = areaId ? perArea.get(areaId) : null
     if (bucket) {
       bucket.headcount += st.plannedHeadcount
+      bucket.assigned += assigned
       bucket.stationCount += 1
     } else {
       unassigned.headcount += st.plannedHeadcount
+      unassigned.assigned += assigned
       unassigned.stationCount += 1
     }
   }
 
   return {
     totalHeadcount,
+    totalAssigned,
     totalStations: stations.length,
     perArea: [...perArea.values()],
     unassigned,

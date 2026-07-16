@@ -40,6 +40,7 @@ export type ShapePatch = Partial<{
   w: number
   h: number
   rotation: number
+  shape: FloorShapeGeometry
   label: string
   color: string
   stationId: string | null
@@ -98,6 +99,49 @@ export async function deletePlan(planId: string): Promise<ActionResult> {
 
   revalidatePath('/floor')
   return { ok: true }
+}
+
+/** Copy a plan (name + " (copy)", same image) and all its shapes. Not active. */
+export async function duplicatePlan(planId: string): Promise<ActionResult<{ id: string }>> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+
+  const { data: source, error } = await supabase
+    .from('floor_plans')
+    .select('name, image_path, image_width, image_height')
+    .eq('id', planId)
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!source) return { ok: false, error: 'Plan not found.' }
+
+  const { data: copy, error: copyError } = await supabase
+    .from('floor_plans')
+    .insert({
+      name: `${source.name} (copy)`,
+      image_path: source.image_path,
+      image_width: source.image_width,
+      image_height: source.image_height,
+      is_active: false,
+    })
+    .select('id')
+    .single()
+  if (copyError) return { ok: false, error: copyError.message }
+
+  const { data: shapes, error: shapesError } = await supabase
+    .from('floor_shapes')
+    .select('kind, shape, x, y, w, h, rotation, label, color, station_id, planned_headcount, sort_order')
+    .eq('plan_id', planId)
+  if (shapesError) return { ok: false, error: shapesError.message }
+
+  if (shapes && shapes.length > 0) {
+    const { error: insertError } = await supabase
+      .from('floor_shapes')
+      .insert(shapes.map((s) => ({ plan_id: copy.id, ...s })))
+    if (insertError) return { ok: false, error: insertError.message }
+  }
+
+  revalidatePath('/floor')
+  return { ok: true, data: { id: copy.id } }
 }
 
 /** Upload/replace the plan's background image. Natural dims come from the client. */
@@ -179,6 +223,7 @@ export async function updateShape(shapeId: string, patch: ShapePatch): Promise<A
     w: number
     h: number
     rotation: number
+    shape: FloorShapeGeometry
     label: string
     color: string
     station_id: string | null
@@ -189,6 +234,7 @@ export async function updateShape(shapeId: string, patch: ShapePatch): Promise<A
   if (patch.w !== undefined) payload.w = patch.w
   if (patch.h !== undefined) payload.h = patch.h
   if (patch.rotation !== undefined) payload.rotation = patch.rotation
+  if (patch.shape !== undefined) payload.shape = patch.shape
   if (patch.label !== undefined) payload.label = patch.label
   if (patch.color !== undefined) payload.color = patch.color
   if (patch.stationId !== undefined) payload.station_id = patch.stationId

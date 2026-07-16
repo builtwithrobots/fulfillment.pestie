@@ -8,7 +8,7 @@ import { Button } from '@/components/button'
 import { Dialog, DialogActions, DialogBody, DialogTitle } from '@/components/dialog'
 import { Field, Label } from '@/components/fieldset'
 import { Input } from '@/components/input'
-import { createPlan, deletePlan, setActivePlan } from '@/lib/floor/actions'
+import { createPlan, deletePlan, duplicatePlan, setActivePlan } from '@/lib/floor/actions'
 
 export function NewPlanButton() {
   const router = useRouter()
@@ -82,6 +82,13 @@ export function PlanRowActions({ planId, name, isActive }: { planId: string; nam
     })
   }
 
+  function duplicate() {
+    startTransition(async () => {
+      const res = await duplicatePlan(planId)
+      if (res.ok) router.push(`/floor/${res.data.id}`)
+    })
+  }
+
   return (
     <div className="flex shrink-0 items-center gap-2">
       <Button outline href={`/floor/${planId}`}>
@@ -92,6 +99,9 @@ export function PlanRowActions({ planId, name, isActive }: { planId: string; nam
           Set active
         </Button>
       )}
+      <Button plain onClick={duplicate} disabled={isPending}>
+        Duplicate
+      </Button>
       <Button plain onClick={() => setConfirming(true)} disabled={isPending}>
         Delete
       </Button>
