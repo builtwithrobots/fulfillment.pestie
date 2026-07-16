@@ -1,17 +1,19 @@
 import { QRCodeSVG } from 'qrcode.react'
 
 /**
- * A QR code pointing at this deployment's Time Study app (`/studies`). The
- * origin is resolved from request headers in the server layout and passed in,
- * so it always matches wherever the app is served (local, preview, or
- * production) with no hardcoded domain and no client-only window read.
+ * A QR code pointing at this deployment's dashboard root (`/`), so scanning it
+ * opens the full app -- the whole sidebar menu -- on a phone. Access is still
+ * governed by the user's own rights: with auth enabled the target routes
+ * through Clerk sign-in first, so each person sees only what they're allowed to.
  *
- * Users scan it to open the app on their phone and "Add to Home Screen" (it is
- * an installable PWA). The QR is always dark-on-white regardless of theme so it
- * stays scannable.
+ * The origin is resolved from request headers in the server layout and passed
+ * in, so it always matches wherever the app is served (local, preview, or
+ * production) with no hardcoded domain and no client-only window read. Users
+ * "Add to Home Screen" from there (it is an installable PWA). The QR is always
+ * dark-on-white regardless of theme so it stays scannable.
  */
 export function InstallQR({ origin }: { origin: string }) {
-  const url = origin ? `${origin}/studies` : ''
+  const url = origin ? `${origin}/` : ''
 
   return (
     <div className="flex flex-col items-center gap-2 py-1">
@@ -22,7 +24,7 @@ export function InstallQR({ origin }: { origin: string }) {
           <div className="size-28" aria-hidden />
         )}
       </div>
-      <span className="text-center text-xs text-zinc-500">Scan to install on your phone</span>
+      <span className="text-center text-xs text-zinc-500">Scan to open the dashboard on your phone</span>
     </div>
   )
 }
