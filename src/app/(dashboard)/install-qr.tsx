@@ -1,5 +1,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 
+import { InstallButton } from './install-button'
+
 /**
  * A QR code pointing at this deployment's dashboard root (`/`), so scanning it
  * opens the full app -- the whole sidebar menu -- on a phone. Access is still
@@ -25,6 +27,10 @@ export function InstallQR({ origin }: { origin: string }) {
         )}
       </div>
       <span className="text-center text-xs text-zinc-500">Scan to open the dashboard on your phone</span>
+      {/* One-tap install on this device (Android/desktop prompt; iOS shows steps). */}
+      <div className="w-full">
+        <InstallButton />
+      </div>
     </div>
   )
 }
