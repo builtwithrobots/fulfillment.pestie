@@ -10,6 +10,7 @@ This app is **Next.js (App Router) + TypeScript + Tailwind v4 + Catalyst UI**, w
 Next.js (App Router, RSC)
 ├─ src/app/(dashboard)/     authenticated ops UI (Clerk-gated), Catalyst sidebar shell
 │   ├─ page.tsx             executive overview
+│   ├─ studies/             Time Study Tool (setup → live timing → results), PWA-ready
 │   ├─ shifts, labor, lines, displays, settings
 ├─ src/app/display/[token]/ PUBLIC read-only station screens (signed token, no Clerk)
 ├─ src/app/api/pairing/

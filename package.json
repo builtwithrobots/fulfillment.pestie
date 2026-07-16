@@ -12,10 +12,10 @@
   "dependencies": {
     "@clerk/nextjs": "^6.36.0",
     "@headlessui/react": "^2.2.10",
-    "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.47.0",
     "clsx": "^2.1.1",
     "jose": "^5.9.6",
+    "lucide-react": "^1.24.0",
     "motion": "^12.38.0",
     "next": "16.2.6",
     "react": "19.2.6",

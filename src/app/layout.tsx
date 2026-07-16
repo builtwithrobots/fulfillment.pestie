@@ -1,7 +1,9 @@
 import '@/styles/tailwind.css'
 
 import { ClerkProvider } from '@clerk/nextjs'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
+
+import { ServiceWorkerRegister } from './service-worker-register'
 
 export const metadata: Metadata = {
   title: {
@@ -9,6 +11,25 @@ export const metadata: Metadata = {
     default: 'Pestie Fulfillment Ops',
   },
   description: 'Labor management, station productivity, and shift planning for the Pestie fulfillment warehouse.',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Pestie Ops',
+  },
+  icons: {
+    apple: '/apple-touch-icon.png',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#18181b' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +43,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <link rel="preconnect" href="https://rsms.me/" />
           <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
         </head>
-        <body>{children}</body>
+        <body>
+          {children}
+          <ServiceWorkerRegister />
+        </body>
       </html>
     </ClerkProvider>
   )

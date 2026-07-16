@@ -1,13 +1,7 @@
 'use client'
 
 import { UserButton } from '@clerk/nextjs'
-import {
-  ChartBarIcon,
-  ClipboardDocumentListIcon,
-  QueueListIcon,
-  TvIcon,
-  UsersIcon,
-} from '@heroicons/react/20/solid'
+import { ChartColumn, ClipboardList, ListChecks, Timer, Tv, Users } from 'lucide-react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
 
@@ -26,11 +20,12 @@ import { SidebarLayout } from '@/components/sidebar-layout'
 import { AUTH_ENABLED } from '@/lib/auth-config'
 
 const nav = [
-  { href: '/', label: 'Overview', icon: ChartBarIcon },
-  { href: '/shifts', label: 'Shift planning', icon: ClipboardDocumentListIcon },
-  { href: '/labor', label: 'Labor allocation', icon: UsersIcon },
-  { href: '/lines', label: 'Lines & stations', icon: QueueListIcon },
-  { href: '/displays', label: 'Station displays', icon: TvIcon },
+  { href: '/', label: 'Overview', icon: ChartColumn },
+  { href: '/studies', label: 'Time studies', icon: Timer },
+  { href: '/shifts', label: 'Shift planning', icon: ClipboardList },
+  { href: '/labor', label: 'Labor allocation', icon: Users },
+  { href: '/lines', label: 'Lines & stations', icon: ListChecks },
+  { href: '/displays', label: 'Station displays', icon: Tv },
 ]
 
 export function ApplicationLayout({ children }: { children: React.ReactNode }) {
@@ -57,8 +52,12 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
           <SidebarBody>
             <SidebarSection>
               {nav.map(({ href, label, icon: Icon }) => (
-                <SidebarItem key={href} href={href} current={pathname === href}>
-                  <Icon />
+                <SidebarItem
+                  key={href}
+                  href={href}
+                  current={href === '/' ? pathname === '/' : pathname.startsWith(href)}
+                >
+                  <Icon data-slot="icon" />
                   <SidebarLabel>{label}</SidebarLabel>
                 </SidebarItem>
               ))}

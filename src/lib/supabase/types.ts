@@ -44,6 +44,37 @@ export type Database = {
         actual: number
         updated_at: string
       }>
+      studies: Table<{
+        id: string
+        user_id: string
+        title: string
+        wage_rate: number
+        use_whole_timer: boolean
+        created_at: string
+        updated_at: string
+      }>
+      steps: Table<{
+        id: string
+        study_id: string
+        name: string
+        notes: string | null
+        timed: boolean
+        position: number
+        created_at: string
+      }>
+      observations: Table<{
+        id: string
+        step_id: string
+        study_id: string
+        duration_ms: number
+        recorded_at: string
+      }>
+      master_runs: Table<{
+        id: string
+        study_id: string
+        duration_ms: number
+        recorded_at: string
+      }>
     }
     Views: Record<string, never>
     Functions: Record<string, never>
