@@ -5,6 +5,7 @@ import { ChartColumn, ClipboardList, ListChecks, Timer, Tv, Users } from 'lucide
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
 
+import { Badge } from '@/components/badge'
 import { Navbar, NavbarSection, NavbarSpacer } from '@/components/navbar'
 import {
   Sidebar,
@@ -19,13 +20,15 @@ import {
 import { SidebarLayout } from '@/components/sidebar-layout'
 import { AUTH_ENABLED } from '@/lib/auth-config'
 
+// `soon` marks features that aren't live yet — they get a "Soon" badge in the
+// sidebar. Time studies is the shipped feature, so it carries no badge.
 const nav = [
-  { href: '/', label: 'Overview', icon: ChartColumn },
-  { href: '/studies', label: 'Time studies', icon: Timer },
-  { href: '/shifts', label: 'Shift planning', icon: ClipboardList },
-  { href: '/labor', label: 'Labor allocation', icon: Users },
-  { href: '/lines', label: 'Lines & stations', icon: ListChecks },
-  { href: '/displays', label: 'Station displays', icon: Tv },
+  { href: '/', label: 'Overview', icon: ChartColumn, soon: true },
+  { href: '/studies', label: 'Time studies', icon: Timer, soon: false },
+  { href: '/shifts', label: 'Shift Planning', icon: ClipboardList, soon: true },
+  { href: '/labor', label: 'Labor Allocation', icon: Users, soon: true },
+  { href: '/lines', label: 'Lines & Stations', icon: ListChecks, soon: true },
+  { href: '/displays', label: 'Displays', icon: Tv, soon: true },
 ]
 
 export function ApplicationLayout({ children }: { children: React.ReactNode }) {
@@ -51,7 +54,7 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
           </SidebarHeader>
           <SidebarBody>
             <SidebarSection>
-              {nav.map(({ href, label, icon: Icon }) => (
+              {nav.map(({ href, label, icon: Icon, soon }) => (
                 <SidebarItem
                   key={href}
                   href={href}
@@ -59,6 +62,11 @@ export function ApplicationLayout({ children }: { children: React.ReactNode }) {
                 >
                   <Icon data-slot="icon" />
                   <SidebarLabel>{label}</SidebarLabel>
+                  {soon && (
+                    <Badge color="zinc" className="ml-auto shrink-0">
+                      Soon
+                    </Badge>
+                  )}
                 </SidebarItem>
               ))}
             </SidebarSection>
