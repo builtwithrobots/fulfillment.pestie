@@ -1,5 +1,7 @@
 import { headers } from 'next/headers'
 
+import { getCurrentAppUser } from '@/lib/users/data'
+import { ROLE_LABELS } from '@/lib/users/roles'
 import { ApplicationLayout } from './application-layout'
 
 // The dashboard is authenticated and renders per-user (Clerk session + live
@@ -16,5 +18,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const proto = h.get('x-forwarded-proto') ?? 'https'
   const origin = host ? `${proto}://${host}` : ''
 
-  return <ApplicationLayout installOrigin={origin}>{children}</ApplicationLayout>
+  const me = await getCurrentAppUser()
+
+  return (
+    <ApplicationLayout installOrigin={origin} userName={me.name} userRole={ROLE_LABELS[me.role]}>
+      {children}
+    </ApplicationLayout>
+  )
 }
