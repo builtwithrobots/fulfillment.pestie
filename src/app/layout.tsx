@@ -7,15 +7,15 @@ import { ServiceWorkerRegister } from './service-worker-register'
 
 export const metadata: Metadata = {
   title: {
-    template: '%s - Pestie Fulfillment Ops',
-    default: 'Pestie Fulfillment Ops',
+    template: '%s - Pestie Fulfillment',
+    default: 'Pestie Fulfillment',
   },
   description: 'Labor management, station productivity, and shift planning for the Pestie fulfillment warehouse.',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Pestie Ops',
+    title: 'Pestie Fulfillment',
   },
   icons: {
     apple: '/apple-touch-icon.png',
