@@ -30,7 +30,7 @@ import { useSupabaseBrowserClient } from '@/lib/supabase/client'
 // viewport, so it's genuinely bigger both ways regardless of screen size.
 const DEFAULT_W = 2400
 const DEFAULT_H = 1500
-const MIN_CANVAS_PX = 1600
+const MIN_CANVAS_PX = 2000
 const GRID = 8
 const MIN_SIZE = 40
 const AREA_COLOR = '#38bdf8'

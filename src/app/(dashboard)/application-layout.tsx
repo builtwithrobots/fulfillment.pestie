@@ -140,7 +140,8 @@ export function ApplicationLayout({
           </span>
         </div>
       )}
-      {/* Fade content between routes; keyed by pathname. */}
+      {/* Fade content between routes; keyed by pathname. The floor editor runs
+          full width; every other page keeps a comfortable reading cap. */}
       <AnimatePresence mode="wait">
         <motion.div
           key={pathname}
@@ -149,7 +150,9 @@ export function ApplicationLayout({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
         >
-          {children}
+          <div className={pathname.startsWith('/floor') ? 'mx-auto w-full' : 'mx-auto w-full max-w-[85rem]'}>
+            {children}
+          </div>
         </motion.div>
       </AnimatePresence>
     </SidebarLayout>
