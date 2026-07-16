@@ -1,7 +1,7 @@
 'use client'
 
 import { UserButton, useUser } from '@clerk/nextjs'
-import { ChartColumn, ClipboardList, ListChecks, Timer, Tv, Users } from 'lucide-react'
+import { BugOff, ChartColumn, ClipboardList, ListChecks, Timer, Tv, Users } from 'lucide-react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
 
@@ -14,7 +14,6 @@ import {
   SidebarDivider,
   SidebarFooter,
   SidebarHeader,
-  SidebarHeading,
   SidebarItem,
   SidebarLabel,
   SidebarSection,
@@ -74,7 +73,18 @@ export function ApplicationLayout({
       sidebar={
         <Sidebar>
           <SidebarHeader>
-            <SidebarHeading>Pestie Fulfillment</SidebarHeading>
+            {/* Pestie brand lockup: green "P" badge + wordmark, "Fulfillment" beneath */}
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#16a34a] text-white shadow-sm">
+                <BugOff className="size-6" strokeWidth={2} />
+              </div>
+              <div className="leading-none">
+                <div className="text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">Pestie</div>
+                <div className="mt-1 text-xs font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
+                  Fulfillment
+                </div>
+              </div>
+            </div>
           </SidebarHeader>
           <SidebarBody>
             <SidebarSection>
