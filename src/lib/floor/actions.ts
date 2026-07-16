@@ -2,16 +2,20 @@
 
 import { revalidatePath } from 'next/cache'
 
-import type { FloorShapeGeometry, FloorShapeKind } from '@/lib/supabase/types'
+import type { AppRole, FloorShapeGeometry, FloorShapeKind } from '@/lib/supabase/types'
 import { listAssignments, type StationAssignment } from '@/lib/floor/data'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { requireUserId } from '@/lib/studies/data'
+import { assertRole } from '@/lib/users/data'
 
 /**
  * Mutations for the Floor Layout Builder. Floor plans are shared config, so
  * there is no per-user scoping, but every action validates the Clerk session
- * first and writes through the service-role client. RLS restricts the anon
- * client to admins as a second line of defense.
+ * and the caller's role first, then writes through the service-role client. RLS
+ * restricts the anon client the same way as a second line of defense.
+ *
+ * Editing the layout (plans, shapes, roster) requires supervisor+; reshuffling
+ * assignments on the floor requires floor_lead+.
  */
 
 const IMAGE_BUCKET = 'floor-plans'
@@ -20,6 +24,13 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 export type ActionResult<T = undefined> =
   | ({ ok: true } & (T extends undefined ? object : { data: T }))
   | { ok: false; error: string }
+
+// Validate the session + require at least `min`. Returns an error string to
+// short-circuit on, or null when the caller is allowed.
+async function gate(min: AppRole): Promise<string | null> {
+  await requireUserId()
+  return assertRole(min)
+}
 
 export type ShapeInput = {
   kind: FloorShapeKind
@@ -51,7 +62,8 @@ export type ShapePatch = Partial<{
 // Plans
 // ---------------------------------------------------------------------------
 export async function createPlan(name: string): Promise<ActionResult<{ id: string }>> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const clean = name.trim()
   if (!clean) return { ok: false, error: 'Please enter a plan name.' }
 
@@ -64,7 +76,8 @@ export async function createPlan(name: string): Promise<ActionResult<{ id: strin
 }
 
 export async function renamePlan(planId: string, name: string): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const clean = name.trim()
   if (!clean) return { ok: false, error: 'Please enter a plan name.' }
 
@@ -78,7 +91,8 @@ export async function renamePlan(planId: string, name: string): Promise<ActionRe
 }
 
 export async function setActivePlan(planId: string): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
 
   // Exactly one active plan: clear the current one, then activate the target.
@@ -92,7 +106,8 @@ export async function setActivePlan(planId: string): Promise<ActionResult> {
 }
 
 export async function deletePlan(planId: string): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
   const { error } = await supabase.from('floor_plans').delete().eq('id', planId)
   if (error) return { ok: false, error: error.message }
@@ -103,7 +118,8 @@ export async function deletePlan(planId: string): Promise<ActionResult> {
 
 /** Copy a plan (name + " (copy)", same image) and all its shapes. Not active. */
 export async function duplicatePlan(planId: string): Promise<ActionResult<{ id: string }>> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
 
   const { data: source, error } = await supabase
@@ -146,7 +162,8 @@ export async function duplicatePlan(planId: string): Promise<ActionResult<{ id: 
 
 /** Upload/replace the plan's background image. Natural dims come from the client. */
 export async function uploadPlanImage(planId: string, formData: FormData): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
 
   const file = formData.get('file')
   const width = Number(formData.get('width'))
@@ -177,7 +194,8 @@ export async function uploadPlanImage(planId: string, formData: FormData): Promi
 // Shapes
 // ---------------------------------------------------------------------------
 export async function createShape(planId: string, input: ShapeInput): Promise<ActionResult<{ id: string }>> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
 
   // New shapes go on top (highest sort_order) so containment picks the latest.
@@ -214,7 +232,8 @@ export async function createShape(planId: string, input: ShapeInput): Promise<Ac
 }
 
 export async function updateShape(shapeId: string, patch: ShapePatch): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
 
   const payload: Partial<{
@@ -247,7 +266,8 @@ export async function updateShape(shapeId: string, patch: ShapePatch): Promise<A
 }
 
 export async function deleteShape(shapeId: string): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
   const { error } = await supabase.from('floor_shapes').delete().eq('id', shapeId)
   if (error) return { ok: false, error: error.message }
@@ -258,7 +278,8 @@ export async function deleteShape(shapeId: string): Promise<ActionResult> {
 // Workers & assignments (phase 2)
 // ---------------------------------------------------------------------------
 export async function createWorker(fullName: string): Promise<ActionResult<{ id: string; fullName: string }>> {
-  await requireUserId()
+  const g = await gate('supervisor')
+  if (g) return { ok: false, error: g }
   const clean = fullName.trim()
   if (!clean) return { ok: false, error: 'Please enter a name.' }
 
@@ -274,7 +295,8 @@ export async function createWorker(fullName: string): Promise<ActionResult<{ id:
  * line_status.actual trigger fires for both the old and new station.
  */
 export async function assignWorker(stationId: string, workerId: string): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('floor_lead')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
 
   const { error: clearError } = await supabase.from('station_assignments').delete().eq('worker_id', workerId)
@@ -285,7 +307,8 @@ export async function assignWorker(stationId: string, workerId: string): Promise
 }
 
 export async function unassignWorker(workerId: string): Promise<ActionResult> {
-  await requireUserId()
+  const g = await gate('floor_lead')
+  if (g) return { ok: false, error: g }
   const supabase = createServiceRoleClient()
   const { error } = await supabase.from('station_assignments').delete().eq('worker_id', workerId)
   if (error) return { ok: false, error: error.message }

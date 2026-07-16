@@ -1,6 +1,6 @@
 'use client'
 
-import { UserButton, useUser } from '@clerk/nextjs'
+import { UserButton } from '@clerk/nextjs'
 import { BugOff, ChartColumn, ClipboardList, LayoutGrid, ListChecks, Timer, Tv, Users } from 'lucide-react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
@@ -44,19 +44,19 @@ const nav = [
 export function ApplicationLayout({
   children,
   installOrigin,
+  userName,
+  userRole,
 }: {
   children: React.ReactNode
   installOrigin: string
+  userName: string
+  userRole: string
 }) {
   const pathname = usePathname()
-  const { user } = useUser()
 
-  // Real Clerk identity once auth is enabled; a stub while auth is off so the
-  // account chip is visible during build-out. Role is a placeholder until
-  // app_users.role is wired through.
-  const displayName =
-    AUTH_ENABLED && user ? (user.fullName ?? user.primaryEmailAddress?.emailAddress ?? 'User') : 'Test User'
-  const displayRole = 'Test Role'
+  // Real identity + role from app_users (resolved server-side in layout.tsx).
+  const displayName = userName
+  const displayRole = userRole
 
   return (
     // reducedMotion="user" makes every Motion animation below (including
