@@ -73,17 +73,16 @@ export function ApplicationLayout({
       sidebar={
         <Sidebar>
           <SidebarHeader>
-            {/* Pestie brand lockup: green "P" badge + wordmark, "Fulfillment" beneath */}
+            {/* Pestie brand lockup: bug-off badge + wordmark vertically centered,
+                "Fulfillment" as a gray badge in the upper-right of the section. */}
             <div className="flex items-center gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#16a34a] text-white shadow-sm">
-                <BugOff className="size-6" strokeWidth={2} />
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[#16a34a] text-white shadow-sm">
+                <BugOff className="size-7" strokeWidth={2} />
               </div>
-              <div className="leading-none">
-                <div className="text-2xl font-bold tracking-tight text-zinc-950 dark:text-white">Pestie</div>
-                <div className="mt-1 text-xs font-medium tracking-wide text-zinc-500 dark:text-zinc-400">
-                  Fulfillment
-                </div>
-              </div>
+              <div className="text-3xl font-bold tracking-tight text-zinc-950 dark:text-white">Pestie</div>
+              <Badge color="zinc" className="ml-auto self-start">
+                Fulfillment
+              </Badge>
             </div>
           </SidebarHeader>
           <SidebarBody>

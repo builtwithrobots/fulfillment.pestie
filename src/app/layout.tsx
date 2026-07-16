@@ -3,6 +3,7 @@ import '@/styles/tailwind.css'
 import { ClerkProvider } from '@clerk/nextjs'
 import type { Metadata, Viewport } from 'next'
 
+import { PwaSplash } from './pwa-splash'
 import { ServiceWorkerRegister } from './service-worker-register'
 
 export const metadata: Metadata = {
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </head>
         <body>
           {children}
+          <PwaSplash />
           <ServiceWorkerRegister />
         </body>
       </html>
