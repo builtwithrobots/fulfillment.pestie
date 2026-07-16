@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import type { FloorShapeGeometry, FloorShapeKind } from '@/lib/supabase/types'
+import { listAssignments, type StationAssignment } from '@/lib/floor/data'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { requireUserId } from '@/lib/studies/data'
 
@@ -205,4 +206,47 @@ export async function deleteShape(shapeId: string): Promise<ActionResult> {
   const { error } = await supabase.from('floor_shapes').delete().eq('id', shapeId)
   if (error) return { ok: false, error: error.message }
   return { ok: true }
+}
+
+// ---------------------------------------------------------------------------
+// Workers & assignments (phase 2)
+// ---------------------------------------------------------------------------
+export async function createWorker(fullName: string): Promise<ActionResult<{ id: string; fullName: string }>> {
+  await requireUserId()
+  const clean = fullName.trim()
+  if (!clean) return { ok: false, error: 'Please enter a name.' }
+
+  const supabase = createServiceRoleClient()
+  const { data, error } = await supabase.from('workers').insert({ full_name: clean }).select('id').single()
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, data: { id: data.id, fullName: clean } }
+}
+
+/**
+ * Assign a worker to a station. One station per worker: any existing assignment
+ * for this worker is removed first, so this doubles as a "move". The
+ * line_status.actual trigger fires for both the old and new station.
+ */
+export async function assignWorker(stationId: string, workerId: string): Promise<ActionResult> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+
+  const { error: clearError } = await supabase.from('station_assignments').delete().eq('worker_id', workerId)
+  if (clearError) return { ok: false, error: clearError.message }
+  const { error } = await supabase.from('station_assignments').insert({ station_id: stationId, worker_id: workerId })
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+export async function unassignWorker(workerId: string): Promise<ActionResult> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase.from('station_assignments').delete().eq('worker_id', workerId)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
+
+/** Client-callable refresh: fetch all assignments (used after mutations / on Realtime). */
+export async function refreshAssignments(): Promise<StationAssignment[]> {
+  return listAssignments()
 }

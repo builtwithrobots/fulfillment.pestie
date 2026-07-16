@@ -106,6 +106,18 @@ export type Database = {
         created_at: string
         updated_at: string
       }>
+      workers: Table<{
+        id: string
+        full_name: string
+        active: boolean
+        created_at: string
+      }>
+      station_assignments: Table<{
+        id: string
+        station_id: string
+        worker_id: string
+        assigned_at: string
+      }>
     }
     Views: Record<string, never>
     Functions: Record<string, never>

@@ -1,17 +1,29 @@
 'use client'
 
-import { ArrowLeft, ImageUp, Square, Trash2, Users } from 'lucide-react'
+import { ArrowLeft, ImageUp, Square, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
+import { Combobox, ComboboxLabel, ComboboxOption } from '@/components/combobox'
 import { Field, Label } from '@/components/fieldset'
 import { Input } from '@/components/input'
 import { Select } from '@/components/select'
-import { createShape, deleteShape, setActivePlan, updateShape, uploadPlanImage } from '@/lib/floor/actions'
-import type { PlanDetail, StationOption } from '@/lib/floor/data'
+import {
+  assignWorker,
+  createShape,
+  createWorker,
+  deleteShape,
+  refreshAssignments,
+  setActivePlan,
+  unassignWorker,
+  updateShape,
+  uploadPlanImage,
+} from '@/lib/floor/actions'
+import type { PlanDetail, StationAssignment, StationOption, Worker } from '@/lib/floor/data'
 import { clamp, type FloorShape, rollUp, snap } from '@/lib/floor/geometry'
+import { useSupabaseBrowserClient } from '@/lib/supabase/client'
 
 const DEFAULT_W = 1200
 const DEFAULT_H = 800
@@ -32,15 +44,22 @@ export function FloorEditor({
   plan,
   initialShapes,
   stations,
+  initialWorkers,
+  initialAssignments,
 }: {
   plan: PlanDetail
   initialShapes: FloorShape[]
   stations: StationOption[]
+  initialWorkers: Worker[]
+  initialAssignments: StationAssignment[]
 }) {
   const router = useRouter()
+  const supabase = useSupabaseBrowserClient()
   const [shapes, setShapes] = useState<FloorShape[]>(initialShapes)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [workers, setWorkers] = useState<Worker[]>(initialWorkers)
+  const [assignments, setAssignments] = useState<StationAssignment[]>(initialAssignments)
   const [, startTransition] = useTransition()
 
   const svgRef = useRef<SVGSVGElement>(null)
@@ -51,6 +70,34 @@ export function FloorEditor({
   const H = plan.imageHeight ?? DEFAULT_H
   const selected = shapes.find((s) => s.id === selectedId) ?? null
   const totals = rollUp(shapes)
+
+  // Assignments grouped by real station id, for canvas counts + the inspector.
+  const assignmentsByStation = useMemo(() => {
+    const map = new Map<string, StationAssignment[]>()
+    for (const a of assignments) {
+      const list = map.get(a.stationId) ?? []
+      list.push(a)
+      map.set(a.stationId, list)
+    }
+    return map
+  }, [assignments])
+
+  // Live updates: refetch assignments whenever another client changes them.
+  // Best-effort — falls back to optimistic local updates when Realtime is
+  // unavailable (e.g. dev with auth off).
+  useEffect(() => {
+    const channel = supabase
+      .channel('floor-assignments')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'station_assignments' }, () => {
+        startTransition(async () => {
+          setAssignments(await refreshAssignments())
+        })
+      })
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [supabase])
 
   // --- geometry helpers (all in event handlers, never render scope) ----------
   function toCanvas(e: React.PointerEvent): { x: number; y: number } | null {
@@ -159,6 +206,37 @@ export function FloorEditor({
     setSelectedId(null)
     startTransition(async () => {
       await deleteShape(id)
+    })
+  }
+
+  // --- assignments -----------------------------------------------------------
+  function doAssign(stationId: string, worker: Worker) {
+    // Optimistic: one station per worker, so move them off any other station.
+    setAssignments((prev) => [
+      ...prev.filter((a) => a.workerId !== worker.id),
+      { assignmentId: `tmp-${worker.id}`, stationId, workerId: worker.id, fullName: worker.fullName },
+    ])
+    startTransition(async () => {
+      await assignWorker(stationId, worker.id)
+      setAssignments(await refreshAssignments())
+    })
+  }
+
+  function doUnassign(workerId: string) {
+    setAssignments((prev) => prev.filter((a) => a.workerId !== workerId))
+    startTransition(async () => {
+      await unassignWorker(workerId)
+      setAssignments(await refreshAssignments())
+    })
+  }
+
+  function doCreateAndAssign(stationId: string, fullName: string) {
+    startTransition(async () => {
+      const res = await createWorker(fullName)
+      if (!res.ok) return
+      setWorkers((prev) => [...prev, { id: res.data.id, fullName: res.data.fullName }])
+      await assignWorker(stationId, res.data.id)
+      setAssignments(await refreshAssignments())
     })
   }
 
@@ -286,6 +364,7 @@ export function FloorEditor({
                   key={s.id}
                   shape={s}
                   selected={s.id === selectedId}
+                  assignedCount={s.stationId ? (assignmentsByStation.get(s.stationId)?.length ?? 0) : null}
                   onDown={(e) => beginDrag(e, s, 'move')}
                   onResize={(e) => beginDrag(e, s, 'resize')}
                 />
@@ -306,9 +385,14 @@ export function FloorEditor({
               key={selected.id}
               shape={selected}
               stations={stations}
+              workers={workers}
+              assigned={selected.stationId ? (assignmentsByStation.get(selected.stationId) ?? []) : []}
               onChange={(patch) => patchLocal(selected.id, patch)}
               onCommit={(patch) => persist(selected.id, patch)}
               onDelete={removeSelected}
+              onAssign={(worker) => selected.stationId && doAssign(selected.stationId, worker)}
+              onCreateAndAssign={(name) => selected.stationId && doCreateAndAssign(selected.stationId, name)}
+              onUnassign={doUnassign}
             />
           ) : (
             <div className="rounded-xl bg-white p-5 text-sm text-zinc-500 ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
@@ -329,11 +413,13 @@ export function FloorEditor({
 function ShapeNode({
   shape,
   selected,
+  assignedCount,
   onDown,
   onResize,
 }: {
   shape: FloorShape
   selected: boolean
+  assignedCount?: number | null
   onDown: (e: React.PointerEvent) => void
   onResize: (e: React.PointerEvent) => void
 }) {
@@ -397,7 +483,9 @@ function ShapeNode({
           fontSize={13}
           style={{ pointerEvents: 'none' }}
         >
-          {shape.plannedHeadcount} planned
+          {assignedCount == null
+            ? `${shape.plannedHeadcount} planned`
+            : `${assignedCount} / ${shape.plannedHeadcount} staffed`}
         </text>
       )}
 
@@ -436,15 +524,25 @@ function ShapeNode({
 function ShapeInspector({
   shape,
   stations,
+  workers,
+  assigned,
   onChange,
   onCommit,
   onDelete,
+  onAssign,
+  onCreateAndAssign,
+  onUnassign,
 }: {
   shape: FloorShape
   stations: StationOption[]
+  workers: Worker[]
+  assigned: StationAssignment[]
   onChange: (patch: Partial<FloorShape>) => void
   onCommit: (patch: Parameters<typeof updateShape>[1]) => void
   onDelete: () => void
+  onAssign: (worker: Worker) => void
+  onCreateAndAssign: (fullName: string) => void
+  onUnassign: (workerId: string) => void
 }) {
   return (
     <div className="space-y-4 rounded-xl bg-white p-5 ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
@@ -512,8 +610,138 @@ function ShapeInspector({
               }
             />
           </Field>
+
+          <AssignmentPanel
+            linked={!!shape.stationId}
+            planned={shape.plannedHeadcount}
+            assigned={assigned}
+            workers={workers}
+            onAssign={onAssign}
+            onCreateAndAssign={onCreateAndAssign}
+            onUnassign={onUnassign}
+          />
         </>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Assignment panel (linked stations only)
+// ---------------------------------------------------------------------------
+function AssignmentPanel({
+  linked,
+  planned,
+  assigned,
+  workers,
+  onAssign,
+  onCreateAndAssign,
+  onUnassign,
+}: {
+  linked: boolean
+  planned: number
+  assigned: StationAssignment[]
+  workers: Worker[]
+  onAssign: (worker: Worker) => void
+  onCreateAndAssign: (fullName: string) => void
+  onUnassign: (workerId: string) => void
+}) {
+  const [newName, setNewName] = useState('')
+
+  if (!linked) {
+    return (
+      <div className="rounded-lg bg-zinc-50 px-3 py-3 text-xs text-zinc-500 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10">
+        Link this shape to a station above to assign people to it.
+      </div>
+    )
+  }
+
+  const assignedIds = new Set(assigned.map((a) => a.workerId))
+  const available = workers.filter((w) => !assignedIds.has(w.id))
+  const over = assigned.length > planned
+
+  return (
+    <div className="border-t border-zinc-950/5 pt-4 dark:border-white/10">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">People</span>
+        <span
+          className={
+            over
+              ? 'text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400'
+              : 'text-xs text-zinc-500 tabular-nums'
+          }
+        >
+          {assigned.length} / {planned} staffed
+        </span>
+      </div>
+
+      {assigned.length > 0 && (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {assigned.map((a) => (
+            <li
+              key={a.assignmentId}
+              className="flex items-center gap-1.5 rounded-full bg-zinc-100 py-1 pr-1 pl-3 text-sm text-zinc-800 dark:bg-white/10 dark:text-zinc-100"
+            >
+              <span className="max-w-40 truncate">{a.fullName}</span>
+              <button
+                type="button"
+                onClick={() => onUnassign(a.workerId)}
+                aria-label={`Remove ${a.fullName}`}
+                className="rounded-full p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-white"
+              >
+                <X className="size-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-3">
+        <Combobox
+          options={available}
+          value={null}
+          displayValue={(w) => w?.fullName}
+          onChange={(w) => w && onAssign(w)}
+          placeholder="Assign someone from the roster…"
+          aria-label="Assign a worker"
+        >
+          {(w) => (
+            <ComboboxOption value={w}>
+              <ComboboxLabel>{w.fullName}</ComboboxLabel>
+            </ComboboxOption>
+          )}
+        </Combobox>
+      </div>
+
+      <div className="mt-2 flex gap-2">
+        <Input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && newName.trim()) {
+              e.preventDefault()
+              onCreateAndAssign(newName.trim())
+              setNewName('')
+            }
+          }}
+          maxLength={80}
+          placeholder="New person's name"
+          aria-label="Add a new worker and assign"
+          className="flex-1"
+        />
+        <Button
+          plain
+          onClick={() => {
+            if (newName.trim()) {
+              onCreateAndAssign(newName.trim())
+              setNewName('')
+            }
+          }}
+          aria-label="Add and assign"
+        >
+          <UserPlus className="size-4" />
+        </Button>
+      </div>
     </div>
   )
 }
