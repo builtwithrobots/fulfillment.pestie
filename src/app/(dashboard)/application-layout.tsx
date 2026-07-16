@@ -1,7 +1,7 @@
 'use client'
 
 import { UserButton, useUser } from '@clerk/nextjs'
-import { BugOff, ChartColumn, ClipboardList, ListChecks, Timer, Tv, Users } from 'lucide-react'
+import { BugOff, ChartColumn, ClipboardList, LayoutGrid, ListChecks, Timer, Tv, Users } from 'lucide-react'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
 import { usePathname } from 'next/navigation'
 
@@ -36,6 +36,7 @@ const nav = [
   { href: '/studies', label: 'Time studies', icon: Timer, soon: false },
   { href: '/shifts', label: 'Shift Planning', icon: ClipboardList, soon: true },
   { href: '/labor', label: 'Labor Allocation', icon: Users, soon: true },
+  { href: '/floor', label: 'Floor Layout', icon: LayoutGrid, soon: false },
   { href: '/lines', label: 'Lines & Stations', icon: ListChecks, soon: true },
   { href: '/displays', label: 'Displays', icon: Tv, soon: true },
 ]
