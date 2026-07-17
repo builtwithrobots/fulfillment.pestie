@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  Check,
   Copy,
   ImageUp,
   Lock,
@@ -34,6 +35,7 @@ import {
   createWorker,
   deleteShape,
   refreshAssignments,
+  renamePlan,
   setActivePlan,
   unassignWorker,
   updateShape,
@@ -403,7 +405,7 @@ export function FloorEditor({
           </Button>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-zinc-950 dark:text-white">{plan.name}</h1>
+              <PlanTitle planId={plan.id} initialName={plan.name} />
               {plan.isActive && <Badge color="green">Active</Badge>}
             </div>
             <p className="text-sm text-zinc-500">
@@ -554,6 +556,84 @@ export function FloorEditor({
         </div>
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Editable plan title -- locked by default; click the lock to rename.
+// ---------------------------------------------------------------------------
+function PlanTitle({ planId, initialName }: { planId: string; initialName: string }) {
+  const [name, setName] = useState(initialName)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(initialName)
+  const [error, setError] = useState(false)
+  const [isPending, startTransition] = useTransition()
+
+  function begin() {
+    setValue(name)
+    setError(false)
+    setEditing(true)
+  }
+
+  function save() {
+    const clean = value.trim()
+    if (!clean) return
+    if (clean === name) return setEditing(false)
+    startTransition(async () => {
+      const res = await renamePlan(planId, clean)
+      if (res.ok) {
+        setName(clean)
+        setEditing(false)
+      } else {
+        setError(true)
+      }
+    })
+  }
+
+  if (editing) {
+    return (
+      <span className="flex items-center gap-1.5">
+        <Input
+          autoFocus
+          value={value}
+          maxLength={80}
+          disabled={isPending}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              save()
+            } else if (e.key === 'Escape') {
+              setEditing(false)
+            }
+          }}
+          aria-label="Plan name"
+          className="w-56 sm:w-72"
+        />
+        <Button plain onClick={save} disabled={isPending} aria-label="Save name">
+          <Check className="size-4 text-emerald-600 dark:text-emerald-400" />
+        </Button>
+        <Button plain onClick={() => setEditing(false)} disabled={isPending} aria-label="Cancel rename">
+          <X className="size-4" />
+        </Button>
+        {error && <span className="text-xs text-red-600 dark:text-red-400">Couldn’t rename.</span>}
+      </span>
+    )
+  }
+
+  return (
+    <span className="group flex items-center gap-1">
+      <h1 className="text-xl font-semibold text-zinc-950 dark:text-white">{name}</h1>
+      <button
+        type="button"
+        onClick={begin}
+        title="Unlock to rename"
+        aria-label="Unlock to rename plan"
+        className="rounded p-1 text-zinc-400 opacity-60 transition group-hover:opacity-100 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+      >
+        <Lock className="size-4" />
+      </button>
+    </span>
   )
 }
 
