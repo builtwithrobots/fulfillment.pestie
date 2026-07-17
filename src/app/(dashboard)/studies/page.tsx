@@ -3,15 +3,12 @@ import Link from 'next/link'
 
 import { Button } from '@/components/button'
 import { Heading } from '@/components/heading'
+import { formatDate } from '@/lib/format'
 import { listStudies } from '@/lib/studies/data'
-import { Card } from './ui'
 import { StudyRowActions } from './study-actions'
+import { Card } from './ui'
 
 export const metadata = { title: 'Time studies' }
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export default async function StudiesPage() {
   const studies = await listStudies()

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import type { ActionResult } from '@/lib/action-result'
 import { listAssignments, type StationAssignment } from '@/lib/floor/data'
 import { requireUserId } from '@/lib/studies/data'
 import { createServiceRoleClient } from '@/lib/supabase/server'
@@ -21,8 +22,7 @@ import { assertRole } from '@/lib/users/data'
 const IMAGE_BUCKET = 'floor-plans'
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
-export type ActionResult<T = undefined> =
-  ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string }
+export type { ActionResult }
 
 // Validate the session + require at least `min`. Returns an error string to
 // short-circuit on, or null when the caller is allowed.

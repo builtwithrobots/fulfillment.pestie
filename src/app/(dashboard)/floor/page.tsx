@@ -4,13 +4,10 @@ import Link from 'next/link'
 import { Badge } from '@/components/badge'
 import { Heading } from '@/components/heading'
 import { listPlans } from '@/lib/floor/data'
+import { formatDate } from '@/lib/format'
 import { NewPlanButton, PlanRowActions } from './plan-controls'
 
 export const metadata = { title: 'Floor layout' }
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export default async function FloorPage() {
   const plans = await listPlans()

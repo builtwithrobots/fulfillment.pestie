@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import type { ActionResult } from '@/lib/action-result'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { requireUserId } from './data'
 
@@ -27,8 +28,7 @@ export type StudyInput = {
   steps: StepInput[]
 }
 
-export type ActionResult<T = undefined> =
-  ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string }
+export type { ActionResult }
 
 function validate(input: StudyInput): string | null {
   if (!input.title.trim()) return 'Please enter a study title.'
