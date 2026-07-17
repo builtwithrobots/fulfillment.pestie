@@ -1,10 +1,12 @@
-import { ArrowLeft, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { Button } from '@/components/button'
 import { Heading } from '@/components/heading'
+import { workerNameMap } from '@/lib/roster/data'
 import { getStudyWithObservations } from '@/lib/studies/data'
-import { computeResults, fmtMs, resultsToPlainText } from '@/lib/time-study'
+import { computePerWorker, computeResults, fmtMs, resultsToPlainText } from '@/lib/time-study'
 import { Card, CardTitle } from '../../ui'
 import { CopyResultsButton } from './copy-button'
 
@@ -27,13 +29,14 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 
 export default async function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const data = await getStudyWithObservations(id)
+  const [data, workerNames] = await Promise.all([getStudyWithObservations(id), workerNameMap()])
   if (!data) notFound()
 
   const { study, steps, masterRuns } = data
   const wage = study.wageRate
   const r = computeResults(steps, wage, study.useWholeTimer ? masterRuns : [])
   const copyText = resultsToPlainText(study.title, wage, steps, study.useWholeTimer ? masterRuns : [])
+  const perWorker = computePerWorker(steps, study.useWholeTimer ? masterRuns : [])
 
   const chartSteps = r.steps.filter((s) => s.timed && s.obsCount > 0)
   const maxAvg = Math.max(0, ...chartSteps.map((s) => s.avgMs))
@@ -152,7 +155,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                   <tr key={s.id} className="border-b border-zinc-950/5 text-zinc-500 italic dark:border-white/5">
                     <td className="py-2.5 pr-3">
                       {s.name}
-                      <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 not-italic uppercase dark:bg-white/5">
+                      <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 uppercase not-italic dark:bg-white/5">
                         Documented
                       </span>
                       {s.notes && <div className="mt-0.5 text-xs text-zinc-400 not-italic">{s.notes}</div>}
@@ -196,6 +199,45 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
         </table>
       </Card>
 
+      {/* Per-employee breakdown -- only when timings were attributed */}
+      {perWorker.length > 0 && (
+        <Card className="mt-4 overflow-x-auto">
+          <CardTitle>By employee</CardTitle>
+          <table className="mt-4 w-full min-w-[32rem] text-sm">
+            <thead>
+              <tr className="border-b border-zinc-950/10 text-left text-[11px] tracking-wide text-zinc-500 uppercase dark:border-white/10">
+                <th className="py-2 pr-3 font-medium">Employee</th>
+                <th className="py-2 pr-3 font-medium">Obs</th>
+                <th className="py-2 pr-3 font-medium">Steps covered</th>
+                <th className="py-2 pr-3 font-medium">Avg cycle (their steps)</th>
+                <th className="py-2 font-medium">Full runs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perWorker.map((w) => (
+                <tr key={w.workerId} className="border-b border-zinc-950/5 dark:border-white/5">
+                  <td className="py-2.5 pr-3 font-medium">
+                    <Link href={`/roster/${w.workerId}`} className="hover:text-blue-600 dark:hover:text-blue-400">
+                      {workerNames.get(w.workerId) ?? 'Removed employee'}
+                    </Link>
+                  </td>
+                  <td className="py-2.5 pr-3">{w.obsCount}</td>
+                  <td className="py-2.5 pr-3">
+                    {w.stepsCovered} of {r.timedCount}
+                  </td>
+                  <td className="py-2.5 pr-3 font-mono tabular-nums">
+                    {w.stepsCovered > 0 ? fmtMs(w.avgCycleMs) : '—'}
+                  </td>
+                  <td className="py-2.5 font-mono tabular-nums">
+                    {w.runCount > 0 ? `${w.runCount} · avg ${fmtMs(w.avgRunMs ?? 0)}` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
       {/* Bottleneck insight */}
       {r.bottleneck && (
         <Card className="mt-4 bg-amber-50/50 ring-amber-500/30 dark:bg-amber-500/5 dark:ring-amber-400/20">
@@ -211,9 +253,6 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
 
       <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <CopyResultsButton text={copyText} />
-        <Button outline href={`/studies/${study.id}/timer`}>
-          <ArrowLeft className="size-4" /> Back to timer
-        </Button>
         <Button plain href="/studies/new">
           <Plus className="size-4" /> New study
         </Button>

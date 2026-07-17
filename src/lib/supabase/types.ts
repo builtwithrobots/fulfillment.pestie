@@ -49,7 +49,7 @@ export type Database = {
       }>
       studies: Table<{
         id: string
-        user_id: string
+        created_by: string
         title: string
         wage_rate: number
         use_whole_timer: boolean
@@ -70,12 +70,14 @@ export type Database = {
         step_id: string
         study_id: string
         duration_ms: number
+        worker_id: string | null
         recorded_at: string
       }>
       master_runs: Table<{
         id: string
         study_id: string
         duration_ms: number
+        worker_id: string | null
         recorded_at: string
       }>
       floor_plans: Table<{

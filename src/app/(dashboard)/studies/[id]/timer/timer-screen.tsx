@@ -1,17 +1,21 @@
 'use client'
 
-import { ArrowRight, FileText, Play, RotateCcw, Save, Square } from 'lucide-react'
+import { ArrowRight, FileText, Play, RotateCcw, Save, Square, UserPlus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
 import { Heading } from '@/components/heading'
+import { Input } from '@/components/input'
+import { Select } from '@/components/select'
+import { createRosterWorker } from '@/lib/roster/actions'
 import { recordMasterRun, recordObservation } from '@/lib/studies/actions'
-import { fmtMs, type StepWithObservations } from '@/lib/time-study'
+import { fmtMs, type Observation, type StepWithObservations } from '@/lib/time-study'
 import { Card, CardTitle } from '../../ui'
 
 type LiveStep = StepWithObservations & { startTs: number | null }
+type WorkerOption = { id: string; fullName: string }
 
 // Wall-clock read, isolated at module scope so it's outside the component's
 // render-purity analysis — every call site below is an event handler.
@@ -23,23 +27,28 @@ export function TimerScreen({
   useWholeTimer,
   initialSteps,
   initialMasterRuns,
+  initialWorkers,
 }: {
   studyId: string
   title: string
   useWholeTimer: boolean
   initialSteps: StepWithObservations[]
-  initialMasterRuns: number[]
+  initialMasterRuns: Observation[]
+  initialWorkers: WorkerOption[]
 }) {
   const router = useRouter()
 
-  const [steps, setSteps] = useState<LiveStep[]>(() =>
-    initialSteps.map((s) => ({ ...s, startTs: null }))
-  )
-  const [master, setMaster] = useState<{ startTs: number | null; elapsed: number; runs: number[] }>({
+  const [steps, setSteps] = useState<LiveStep[]>(() => initialSteps.map((s) => ({ ...s, startTs: null })))
+  const [master, setMaster] = useState<{ startTs: number | null; elapsed: number; runs: Observation[] }>({
     startTs: null,
     elapsed: 0,
     runs: initialMasterRuns,
   })
+  // Who is being timed: stamped onto every observation/run recorded while
+  // selected. Null = unattributed, so timing never blocks on roster hygiene.
+  const [workers, setWorkers] = useState<WorkerOption[]>(initialWorkers)
+  const [workerId, setWorkerId] = useState<string | null>(null)
+  const [newWorkerName, setNewWorkerName] = useState('')
   const [now, setNow] = useState(() => nowMs())
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -70,23 +79,15 @@ export function TimerScreen({
     } else {
       // Stop → record ONE observation immediately (no batching)
       const elapsed = nowMs() - step.startTs
+      const obs: Observation = { durationMs: elapsed, workerId }
       setSteps((prev) =>
-        prev.map((s) =>
-          s.id === id ? { ...s, startTs: null, observations: [...s.observations, elapsed] } : s
-        )
+        prev.map((s) => (s.id === id ? { ...s, startTs: null, observations: [...s.observations, obs] } : s))
       )
-      recordObservation(studyId, id, elapsed).then((res) => {
+      recordObservation(studyId, id, elapsed, workerId).then((res) => {
         if (!res.ok) {
-          // Roll back the optimistic observation.
+          // Roll back the optimistic observation (by reference).
           setSteps((prev) =>
-            prev.map((s) => {
-              if (s.id !== id) return s
-              const idx = s.observations.lastIndexOf(elapsed)
-              if (idx === -1) return s
-              const next = [...s.observations]
-              next.splice(idx, 1)
-              return { ...s, observations: next }
-            })
+            prev.map((s) => (s.id === id ? { ...s, observations: s.observations.filter((o) => o !== obs) } : s))
           )
           showToast(`Couldn't save observation: ${res.error}`)
         }
@@ -112,21 +113,36 @@ export function TimerScreen({
   function saveMasterRun() {
     const value = master.startTs !== null ? nowMs() - master.startTs : master.elapsed
     if (value <= 0) return
-    setMaster((m) => ({ ...m, startTs: null, elapsed: 0, runs: [...m.runs, value] }))
-    recordMasterRun(studyId, value).then((res) => {
+    const run: Observation = { durationMs: value, workerId }
+    setMaster((m) => ({ ...m, startTs: null, elapsed: 0, runs: [...m.runs, run] }))
+    recordMasterRun(studyId, value, workerId).then((res) => {
       if (res.ok) {
         showToast(`Master run saved.`)
       } else {
-        setMaster((m) => {
-          const idx = m.runs.lastIndexOf(value)
-          const runs = [...m.runs]
-          if (idx !== -1) runs.splice(idx, 1)
-          return { ...m, runs }
-        })
+        setMaster((m) => ({ ...m, runs: m.runs.filter((r) => r !== run) }))
         showToast(`Couldn't save run: ${res.error}`)
       }
     })
   }
+
+  // ── Worker attribution ───────────────────────────────────────
+  function addWorker() {
+    const name = newWorkerName.trim()
+    if (!name) return
+    createRosterWorker(name).then((res) => {
+      if (!res.ok) {
+        showToast(`Couldn't add person: ${res.error}`)
+        return
+      }
+      setWorkers((prev) =>
+        [...prev, { id: res.data.id, fullName: res.data.fullName }].sort((a, b) => a.fullName.localeCompare(b.fullName))
+      )
+      setWorkerId(res.data.id)
+      setNewWorkerName('')
+    })
+  }
+
+  const workerName = (id: string | null) => (id ? (workers.find((w) => w.id === id)?.fullName ?? null) : null)
 
   function resetMaster() {
     setMaster((m) => ({ ...m, startTs: null, elapsed: 0 }))
@@ -176,6 +192,50 @@ export function TimerScreen({
         </p>
       </div>
 
+      {/* Who's being timed — stamped onto every recording until changed. */}
+      <Card className="mt-4">
+        <CardTitle>Timing</CardTitle>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Select
+            value={workerId ?? ''}
+            onChange={(e) => setWorkerId(e.target.value || null)}
+            aria-label="Employee being timed"
+            className="max-w-60"
+          >
+            <option value="">— Unattributed —</option>
+            {workers.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.fullName}
+              </option>
+            ))}
+          </Select>
+          <div className="flex flex-1 items-center gap-2">
+            <Input
+              value={newWorkerName}
+              onChange={(e) => setNewWorkerName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addWorker()
+                }
+              }}
+              maxLength={80}
+              placeholder="Add a new person…"
+              aria-label="Add a new person to the roster"
+              className="min-w-40 flex-1"
+            />
+            <Button plain onClick={addWorker} aria-label="Add person and select them">
+              <UserPlus className="size-4" />
+            </Button>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          {workerId
+            ? `Recordings are attributed to ${workerName(workerId)} and appear on their roster profile.`
+            : 'Pick who you’re observing to build their roster profile (optional).'}
+        </p>
+      </Card>
+
       {/* Master timer */}
       {useWholeTimer && (
         <Card className="mt-4 ring-violet-500/30 dark:ring-violet-400/20">
@@ -212,12 +272,13 @@ export function TimerScreen({
           {master.runs.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="text-xs text-zinc-500">RUNS:</span>
-              {master.runs.map((ms, i) => (
+              {master.runs.map((r, i) => (
                 <span
                   key={i}
+                  title={workerName(r.workerId) ?? undefined}
                   className="rounded-md bg-violet-500/10 px-2 py-0.5 font-mono text-xs text-violet-600 ring-1 ring-violet-500/20 dark:text-violet-300"
                 >
-                  R{i + 1}: {fmtMs(ms)}
+                  R{i + 1}: {fmtMs(r.durationMs)}
                 </span>
               ))}
             </div>
@@ -236,7 +297,7 @@ export function TimerScreen({
               className={step.timed ? '' : 'border border-dashed border-zinc-300 opacity-80 dark:border-white/15'}
             >
               <div className="flex items-start gap-3">
-                <span className="mt-0.5 font-mono text-xs tabular-nums text-zinc-400">
+                <span className="mt-0.5 font-mono text-xs text-zinc-400 tabular-nums">
                   {String(i + 1).padStart(2, '0')}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -272,13 +333,13 @@ export function TimerScreen({
                   </div>
                   {step.observations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
-                      {step.observations.map((ms, oi) => (
+                      {step.observations.map((o, oi) => (
                         <span
                           key={oi}
-                          title={`Obs ${oi + 1}`}
+                          title={`Obs ${oi + 1}${workerName(o.workerId) ? ` — ${workerName(o.workerId)}` : ''}`}
                           className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-xs text-zinc-500 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10"
                         >
-                          {fmtMs(ms)}
+                          {fmtMs(o.durationMs)}
                         </span>
                       ))}
                     </div>
