@@ -6,9 +6,11 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { requireUserId } from './data'
 
 /**
- * Mutations for the Time Study Tool. Each one validates the Clerk session
- * (requireUserId) before writing, and every write goes through the service-role
- * client scoped by user_id in code. RLS is a second line of defense.
+ * Mutations for the Time Study Tool. Studies are shared operational data —
+ * any signed-in leadership user can edit any study (created_by is attribution,
+ * not authorization). Each action validates the Clerk session (requireUserId)
+ * before writing through the service-role client. RLS is a second line of
+ * defense.
  */
 
 export type StepInput = {
@@ -26,8 +28,7 @@ export type StudyInput = {
 }
 
 export type ActionResult<T = undefined> =
-  | ({ ok: true } & (T extends undefined ? object : { data: T }))
-  | { ok: false; error: string }
+  ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string }
 
 function validate(input: StudyInput): string | null {
   if (!input.title.trim()) return 'Please enter a study title.'
@@ -37,18 +38,9 @@ function validate(input: StudyInput): string | null {
   return null
 }
 
-/** Confirm the study exists and belongs to the caller; returns null if not. */
-async function assertOwner(
-  supabase: ReturnType<typeof createServiceRoleClient>,
-  studyId: string,
-  userId: string
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('studies')
-    .select('id')
-    .eq('id', studyId)
-    .eq('user_id', userId)
-    .maybeSingle()
+/** Confirm the study exists; returns false if not. */
+async function assertExists(supabase: ReturnType<typeof createServiceRoleClient>, studyId: string): Promise<boolean> {
+  const { data, error } = await supabase.from('studies').select('id').eq('id', studyId).maybeSingle()
   if (error) throw error
   return !!data
 }
@@ -62,7 +54,7 @@ export async function createStudy(input: StudyInput): Promise<ActionResult<{ id:
   const { data: study, error } = await supabase
     .from('studies')
     .insert({
-      user_id: userId,
+      created_by: userId,
       title: input.title.trim(),
       wage_rate: input.wageRate,
       use_whole_timer: input.useWholeTimer,
@@ -86,12 +78,12 @@ export async function createStudy(input: StudyInput): Promise<ActionResult<{ id:
 }
 
 export async function updateStudy(studyId: string, input: StudyInput): Promise<ActionResult> {
-  const userId = await requireUserId()
+  await requireUserId()
   const err = validate(input)
   if (err) return { ok: false, error: err }
 
   const supabase = createServiceRoleClient()
-  if (!(await assertOwner(supabase, studyId, userId))) return { ok: false, error: 'Study not found.' }
+  if (!(await assertExists(supabase, studyId))) return { ok: false, error: 'Study not found.' }
 
   const { error: studyError } = await supabase
     .from('studies')
@@ -101,15 +93,11 @@ export async function updateStudy(studyId: string, input: StudyInput): Promise<A
       use_whole_timer: input.useWholeTimer,
     })
     .eq('id', studyId)
-    .eq('user_id', userId)
   if (studyError) return { ok: false, error: studyError.message }
 
   // Reconcile steps by id so observations on kept steps survive an edit:
   // update existing, insert new, delete removed.
-  const { data: existing, error: existingError } = await supabase
-    .from('steps')
-    .select('id')
-    .eq('study_id', studyId)
+  const { data: existing, error: existingError } = await supabase.from('steps').select('id').eq('study_id', studyId)
   if (existingError) return { ok: false, error: existingError.message }
 
   const existingIds = new Set((existing ?? []).map((s) => s.id))
@@ -146,11 +134,10 @@ export async function updateStudy(studyId: string, input: StudyInput): Promise<A
 }
 
 export async function deleteStudy(studyId: string): Promise<ActionResult> {
-  const userId = await requireUserId()
+  await requireUserId()
   const supabase = createServiceRoleClient()
-  // Scoped delete: only removes the row when user_id matches. Steps,
-  // observations and master runs cascade.
-  const { error } = await supabase.from('studies').delete().eq('id', studyId).eq('user_id', userId)
+  // Steps, observations and master runs cascade.
+  const { error } = await supabase.from('studies').delete().eq('id', studyId)
   if (error) return { ok: false, error: error.message }
   revalidatePath('/studies')
   return { ok: true }
@@ -165,7 +152,6 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
     .from('studies')
     .select('title, wage_rate, use_whole_timer')
     .eq('id', studyId)
-    .eq('user_id', userId)
     .maybeSingle()
   if (error) return { ok: false, error: error.message }
   if (!source) return { ok: false, error: 'Study not found.' }
@@ -173,7 +159,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
   const { data: copy, error: copyError } = await supabase
     .from('studies')
     .insert({
-      user_id: userId,
+      created_by: userId,
       title: `${source.title} (copy)`,
       wage_rate: source.wage_rate,
       use_whole_timer: source.use_whole_timer,
@@ -190,9 +176,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
   if (stepsError) return { ok: false, error: stepsError.message }
 
   if (steps && steps.length > 0) {
-    const { error: insertError } = await supabase
-      .from('steps')
-      .insert(steps.map((s) => ({ study_id: copy.id, ...s })))
+    const { error: insertError } = await supabase.from('steps').insert(steps.map((s) => ({ study_id: copy.id, ...s })))
     if (insertError) return { ok: false, error: insertError.message }
   }
 
@@ -202,20 +186,21 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
 
 /**
  * Record ONE observation immediately (called on every Stop click — no batching).
- * Verifies the step belongs to a study owned by the caller before writing.
+ * Verifies the step belongs to the study before writing. workerId attributes
+ * the timing to a roster employee (null = unattributed).
  */
 export async function recordObservation(
   studyId: string,
   stepId: string,
-  durationMs: number
+  durationMs: number,
+  workerId: string | null = null
 ): Promise<ActionResult<{ id: string }>> {
-  const userId = await requireUserId()
+  await requireUserId()
   if (!Number.isFinite(durationMs) || durationMs < 0) return { ok: false, error: 'Invalid duration.' }
 
   const supabase = createServiceRoleClient()
 
-  // Ensure the study is owned by the caller and the step belongs to it.
-  if (!(await assertOwner(supabase, studyId, userId))) return { ok: false, error: 'Study not found.' }
+  if (!(await assertExists(supabase, studyId))) return { ok: false, error: 'Study not found.' }
   const { data: step, error: stepError } = await supabase
     .from('steps')
     .select('id')
@@ -227,7 +212,7 @@ export async function recordObservation(
 
   const { data, error } = await supabase
     .from('observations')
-    .insert({ study_id: studyId, step_id: stepId, duration_ms: Math.round(durationMs) })
+    .insert({ study_id: studyId, step_id: stepId, duration_ms: Math.round(durationMs), worker_id: workerId })
     .select('id')
     .single()
   if (error) return { ok: false, error: error.message }
@@ -238,17 +223,18 @@ export async function recordObservation(
 /** Record one full-process master run immediately. */
 export async function recordMasterRun(
   studyId: string,
-  durationMs: number
+  durationMs: number,
+  workerId: string | null = null
 ): Promise<ActionResult<{ id: string }>> {
-  const userId = await requireUserId()
+  await requireUserId()
   if (!Number.isFinite(durationMs) || durationMs <= 0) return { ok: false, error: 'Invalid duration.' }
 
   const supabase = createServiceRoleClient()
-  if (!(await assertOwner(supabase, studyId, userId))) return { ok: false, error: 'Study not found.' }
+  if (!(await assertExists(supabase, studyId))) return { ok: false, error: 'Study not found.' }
 
   const { data, error } = await supabase
     .from('master_runs')
-    .insert({ study_id: studyId, duration_ms: Math.round(durationMs) })
+    .insert({ study_id: studyId, duration_ms: Math.round(durationMs), worker_id: workerId })
     .select('id')
     .single()
   if (error) return { ok: false, error: error.message }

@@ -4,15 +4,16 @@ import { auth } from '@clerk/nextjs/server'
 
 import { AUTH_ENABLED } from '@/lib/auth-config'
 import { createServiceRoleClient } from '@/lib/supabase/server'
-import type { StepWithObservations } from '@/lib/time-study'
+import type { Observation, StepWithObservations } from '@/lib/time-study'
 
 /**
  * Server data layer for the Time Study Tool.
  *
- * Every function validates the Clerk session first (requireUserId), then reads
- * or writes through the service-role client (which bypasses RLS) while scoping
- * every query by user_id in code. This is the pattern the brief asks for:
- * service role on the server, Clerk session validated before touching the DB.
+ * Studies are shared operational data (like floor plans): every signed-in
+ * leadership user sees every study. studies.created_by records who made a
+ * study (attribution only — it never gates access). Every function still
+ * validates the Clerk session first (requireUserId) before touching the DB
+ * through the service-role client; RLS is defense-in-depth.
  */
 
 // When auth is disabled for local build-out (NEXT_PUBLIC_ENABLE_AUTH != true)
@@ -52,15 +53,14 @@ export type StudyDetail = {
   }[]
 }
 
-/** Dashboard list — all of the current user's studies, newest activity first. */
+/** Dashboard list — every study, newest activity first. */
 export async function listStudies(): Promise<StudySummary[]> {
-  const userId = await requireUserId()
+  await requireUserId()
   const supabase = createServiceRoleClient()
 
   const { data: studies, error } = await supabase
     .from('studies')
     .select('id, title, created_at, updated_at')
-    .eq('user_id', userId)
     .order('updated_at', { ascending: false })
   if (error) throw error
   if (!studies || studies.length === 0) return []
@@ -88,16 +88,15 @@ export async function listStudies(): Promise<StudySummary[]> {
   }))
 }
 
-/** Full study + ordered steps, scoped to the owner. Null if not found/owned. */
+/** Full study + ordered steps. Null if not found. */
 export async function getStudy(studyId: string): Promise<StudyDetail | null> {
-  const userId = await requireUserId()
+  await requireUserId()
   const supabase = createServiceRoleClient()
 
   const { data: study, error } = await supabase
     .from('studies')
     .select('id, title, wage_rate, use_whole_timer, created_at, updated_at')
     .eq('id', studyId)
-    .eq('user_id', userId)
     .maybeSingle()
   if (error) throw error
   if (!study) return null
@@ -134,7 +133,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
 export async function getStudyWithObservations(studyId: string): Promise<{
   study: StudyDetail
   steps: StepWithObservations[]
-  masterRuns: number[]
+  masterRuns: Observation[]
 } | null> {
   const detail = await getStudy(studyId)
   if (!detail) return null
@@ -144,22 +143,22 @@ export async function getStudyWithObservations(studyId: string): Promise<{
   const [{ data: obs, error: obsError }, { data: runs, error: runsError }] = await Promise.all([
     supabase
       .from('observations')
-      .select('step_id, duration_ms')
+      .select('step_id, duration_ms, worker_id')
       .eq('study_id', studyId)
       .order('recorded_at', { ascending: true }),
     supabase
       .from('master_runs')
-      .select('duration_ms')
+      .select('duration_ms, worker_id')
       .eq('study_id', studyId)
       .order('recorded_at', { ascending: true }),
   ])
   if (obsError) throw obsError
   if (runsError) throw runsError
 
-  const byStep = new Map<string, number[]>()
+  const byStep = new Map<string, Observation[]>()
   for (const row of obs ?? []) {
     const list = byStep.get(row.step_id) ?? []
-    list.push(row.duration_ms)
+    list.push({ durationMs: row.duration_ms, workerId: row.worker_id })
     byStep.set(row.step_id, list)
   }
 
@@ -175,6 +174,6 @@ export async function getStudyWithObservations(studyId: string): Promise<{
   return {
     study: detail,
     steps,
-    masterRuns: (runs ?? []).map((r) => r.duration_ms),
+    masterRuns: (runs ?? []).map((r) => ({ durationMs: r.duration_ms, workerId: r.worker_id })),
   }
 }
