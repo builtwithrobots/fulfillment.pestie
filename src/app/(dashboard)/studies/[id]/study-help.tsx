@@ -21,9 +21,9 @@ export function StudyHelp() {
           <section>
             <h3 className="font-semibold text-zinc-950 dark:text-white">1 · Set up</h3>
             <p className="mt-1">
-              List the steps of your process in order. Mark each one <em>Timed</em> (you&apos;ll clock it with a
-              stopwatch) or <em>Documented</em> (notes only). Add an hourly wage to turn times into costs, and switch on
-              the master timer to also clock the whole process end-to-end.
+              List the steps of your process in order. Mark each step <em>Timed</em> or <em>Documented</em>: timed steps
+              you clock with a stopwatch, documented steps are just notes. Add an hourly wage to turn times into costs,
+              and switch on the master timer to also clock the whole process end-to-end.
             </p>
           </section>
 

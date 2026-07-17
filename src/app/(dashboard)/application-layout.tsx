@@ -44,7 +44,7 @@ const navSections: {
   {
     heading: 'Floor',
     items: [
-      { href: '/floor', label: 'Floor Layout', icon: LayoutGrid },
+      { href: '/floor', label: 'Floor Layout', icon: LayoutGrid, soon: true },
       { href: '/lines', label: 'Lines & Stations', icon: ListChecks, soon: true },
       { href: '/displays', label: 'Displays', icon: Tv, soon: true },
     ],
