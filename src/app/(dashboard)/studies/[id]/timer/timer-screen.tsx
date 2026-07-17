@@ -1,6 +1,18 @@
 'use client'
 
-import { ArrowRight, FileText, Play, RotateCcw, Save, Square, UserPlus } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  FileText,
+  Play,
+  Repeat,
+  RotateCcw,
+  Save,
+  SkipForward,
+  Square,
+  UserPlus,
+  X,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/badge'
@@ -56,6 +68,12 @@ export function TimerScreen({
   const [workerId, setWorkerId] = useState<string | null>(null)
   const [stepWorkers, setStepWorkers] = useState<Record<string, string | null>>({})
   const [newWorkerName, setNewWorkerName] = useState('')
+  // Cycle mode: run the timed steps in sequence with one control (tap through),
+  // recording a split observation per step -- each stamped with that step's
+  // assigned person. cycleIdx is the position among timed steps, or null idle.
+  const [mode, setMode] = useState<'step' | 'cycle'>('step')
+  const [cycleIdx, setCycleIdx] = useState<number | null>(null)
+  const [cycleCount, setCycleCount] = useState(0)
   const [now, setNow] = useState(() => nowMs())
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -73,37 +91,92 @@ export function TimerScreen({
     return () => clearInterval(id)
   }, [anyRunning])
 
-  // ── Step timers ──────────────────────────────────────────────
+  // ── Observation recording (shared by per-step and cycle timing) ──
+  // Records ONE observation immediately (no batching), stamped with the step's
+  // assigned person, with optimistic append + rollback on failure. Does not
+  // touch startTs -- callers manage the running state.
+  function recordStepObservation(stepId: string, elapsed: number) {
+    const stampedWorker = workerForStep(stepId)
+    const obs: Observation = { durationMs: elapsed, workerId: stampedWorker }
+    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, observations: [...s.observations, obs] } : s)))
+    const rollback = (reason: string) => {
+      setSteps((prev) =>
+        prev.map((s) => (s.id === stepId ? { ...s, observations: s.observations.filter((o) => o !== obs) } : s))
+      )
+      showToast(`Couldn't save observation: ${reason}`)
+    }
+    recordObservation(studyId, stepId, elapsed, stampedWorker)
+      .then((res) => {
+        if (!res.ok) rollback(res.error)
+      })
+      .catch(() => rollback('network error — check your connection.'))
+  }
+
+  // ── Per-step timers ──────────────────────────────────────────
   function toggleStep(id: string) {
     const step = steps.find((s) => s.id === id)
     if (!step || !step.timed) return
 
     if (step.startTs === null) {
-      // Start
       const startTs = nowMs()
       setNow(startTs)
       setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, startTs } : s)))
     } else {
-      // Stop → record ONE observation immediately (no batching)
       const elapsed = nowMs() - step.startTs
-      const stampedWorker = workerForStep(id)
-      const obs: Observation = { durationMs: elapsed, workerId: stampedWorker }
-      setSteps((prev) =>
-        prev.map((s) => (s.id === id ? { ...s, startTs: null, observations: [...s.observations, obs] } : s))
-      )
-      const rollback = (reason: string) => {
-        // Roll back the optimistic observation (by reference).
-        setSteps((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, observations: s.observations.filter((o) => o !== obs) } : s))
-        )
-        showToast(`Couldn't save observation: ${reason}`)
-      }
-      recordObservation(studyId, id, elapsed, stampedWorker)
-        .then((res) => {
-          if (!res.ok) rollback(res.error)
-        })
-        .catch(() => rollback('network error — check your connection.'))
+      setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, startTs: null } : s)))
+      recordStepObservation(id, elapsed)
     }
+  }
+
+  // ── Cycle mode ───────────────────────────────────────────────
+  function switchMode(next: 'step' | 'cycle') {
+    if (next === mode) return
+    // Discard any in-progress (unsaved) running timer when switching modes.
+    setSteps((prev) => prev.map((s) => ({ ...s, startTs: null })))
+    setCycleIdx(null)
+    setMode(next)
+  }
+
+  function startCycle() {
+    const timed = steps.filter((s) => s.timed)
+    if (timed.length === 0) return
+    const start = nowMs()
+    setNow(start)
+    setCycleIdx(0)
+    setSteps((prev) => prev.map((s) => ({ ...s, startTs: s.id === timed[0].id ? start : null })))
+  }
+
+  function advanceCycle() {
+    if (cycleIdx === null) return
+    const timed = steps.filter((s) => s.timed)
+    const current = timed[cycleIdx]
+    if (!current || current.startTs === null) return
+
+    recordStepObservation(current.id, nowMs() - current.startTs)
+
+    const nextIdx = cycleIdx + 1
+    if (nextIdx < timed.length) {
+      const start = nowMs()
+      setNow(start)
+      setCycleIdx(nextIdx)
+      setSteps((prev) =>
+        prev.map((s) => {
+          if (s.id === current.id) return { ...s, startTs: null }
+          if (s.id === timed[nextIdx].id) return { ...s, startTs: start }
+          return s
+        })
+      )
+    } else {
+      setCycleIdx(null)
+      setCycleCount((c) => c + 1)
+      setSteps((prev) => prev.map((s) => (s.id === current.id ? { ...s, startTs: null } : s)))
+      showToast(`Cycle recorded — ${timed.length} step${timed.length !== 1 ? 's' : ''}.`)
+    }
+  }
+
+  function cancelCycle() {
+    setSteps((prev) => prev.map((s) => ({ ...s, startTs: null })))
+    setCycleIdx(null)
   }
 
   // ── Master timer ─────────────────────────────────────────────
@@ -198,6 +271,12 @@ export function TimerScreen({
   const doneCount = timedSteps.filter((s) => s.observations.length > 0).length
   const pct = timedSteps.length ? Math.round((doneCount / timedSteps.length) * 100) : 0
 
+  // ── Cycle-mode derived state ─────────────────────────────────
+  const cycleActive = cycleIdx !== null
+  const cycleStep = cycleActive ? timedSteps[cycleIdx] : null
+  const cycleElapsed = cycleStep?.startTs != null ? now - cycleStep.startTs : 0
+  const cycleIsLast = cycleActive && cycleIdx === timedSteps.length - 1
+
   const badge = useWholeTimer
     ? `${timedSteps.length} timed step${timedSteps.length !== 1 ? 's' : ''} + master timer`
     : `${timedSteps.length} of ${steps.length} steps timed`
@@ -282,8 +361,91 @@ export function TimerScreen({
         </p>
       </Card>
 
-      {/* Master timer */}
-      {useWholeTimer && (
+      {/* Timing mode -- only meaningful with timed steps */}
+      {timedSteps.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">Timing mode</span>
+          <div
+            role="radiogroup"
+            aria-label="Timing mode"
+            className="inline-flex items-center gap-0.5 rounded-lg bg-zinc-100 p-0.5 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10"
+          >
+            {(['step', 'cycle'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={mode === m}
+                onClick={() => switchMode(m)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  mode === m
+                    ? 'bg-white text-zinc-950 shadow-sm ring-1 ring-zinc-950/5 dark:bg-zinc-700 dark:text-white dark:ring-white/10'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                {m === 'cycle' ? <Repeat className="size-4" /> : <Play className="size-4" />}
+                {m === 'step' ? 'Per step' : 'Cycle'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cycle control -- drives the timed steps in sequence */}
+      {mode === 'cycle' && timedSteps.length > 0 && (
+        <Card className="mt-4 ring-emerald-500/30 dark:ring-emerald-400/20">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-emerald-600 dark:text-emerald-400">Cycle timing</CardTitle>
+            {cycleCount > 0 && (
+              <span className="text-xs text-zinc-500">
+                {cycleCount} cycle{cycleCount !== 1 ? 's' : ''} recorded
+              </span>
+            )}
+          </div>
+
+          {cycleActive && cycleStep ? (
+            <div className="mt-3">
+              <div className="text-sm text-zinc-500">
+                Step {(cycleIdx as number) + 1} of {timedSteps.length} ·{' '}
+                <span className="font-medium text-zinc-950 dark:text-white">{cycleStep.name}</span>
+                {workerName(workerForStep(cycleStep.id)) && <> · {workerName(workerForStep(cycleStep.id))}</>}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <div className="font-mono text-3xl font-bold text-emerald-600 tabular-nums sm:text-4xl dark:text-emerald-400">
+                  {fmtMs(cycleElapsed)}
+                </div>
+                <Button color="emerald" onClick={advanceCycle}>
+                  {cycleIsLast ? (
+                    <>
+                      <Check className="size-4" /> Finish cycle
+                    </>
+                  ) : (
+                    <>
+                      <SkipForward className="size-4" /> Next step
+                    </>
+                  )}
+                </Button>
+                <Button plain onClick={cancelCycle} aria-label="Cancel cycle">
+                  <X className="size-4" /> Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button color="emerald" onClick={startCycle}>
+                <Play className="size-4" /> Start cycle
+              </Button>
+              <p className="text-xs text-zinc-500">
+                Tap through the {timedSteps.length} steps in order — each split saves to that step’s assigned person.
+                Assign people per step below.
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Master timer -- per-step mode only (cycle mode replaces it) */}
+      {useWholeTimer && mode === 'step' && (
         <Card className="mt-4 ring-violet-500/30 dark:ring-violet-400/20">
           <CardTitle className="text-violet-600 dark:text-violet-400">Master timer</CardTitle>
           <div className="mt-3 flex flex-wrap items-center gap-4">
@@ -337,10 +499,17 @@ export function TimerScreen({
         {steps.map((step, i) => {
           const running = step.startTs !== null
           const elapsed = running ? now - (step.startTs as number) : 0
+          const isCycleActive = mode === 'cycle' && cycleStep?.id === step.id
           return (
             <Card
               key={step.id}
-              className={step.timed ? '' : 'border border-dashed border-zinc-300 opacity-80 dark:border-white/15'}
+              className={
+                !step.timed
+                  ? 'border border-dashed border-zinc-300 opacity-80 dark:border-white/15'
+                  : isCycleActive
+                    ? 'ring-2 ring-emerald-500/50 dark:ring-emerald-400/40'
+                    : ''
+              }
             >
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 font-mono text-xs text-zinc-400 tabular-nums">
@@ -362,17 +531,23 @@ export function TimerScreen({
                     >
                       {fmtMs(elapsed)}
                     </div>
-                    <Button color={running ? 'amber' : 'emerald'} onClick={() => toggleStep(step.id)}>
-                      {running ? (
-                        <>
-                          <Square className="size-4" /> Stop
-                        </>
-                      ) : (
-                        <>
-                          <Play className="size-4" /> Start
-                        </>
-                      )}
-                    </Button>
+                    {mode === 'step' ? (
+                      <Button color={running ? 'amber' : 'emerald'} onClick={() => toggleStep(step.id)}>
+                        {running ? (
+                          <>
+                            <Square className="size-4" /> Stop
+                          </>
+                        ) : (
+                          <>
+                            <Play className="size-4" /> Start
+                          </>
+                        )}
+                      </Button>
+                    ) : isCycleActive ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-300">
+                        <Repeat className="size-3.5" /> Timing now
+                      </span>
+                    ) : null}
                     <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-500 dark:bg-white/5">
                       {step.observations.length} obs
                     </span>
