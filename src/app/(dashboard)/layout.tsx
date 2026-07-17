@@ -1,8 +1,9 @@
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 
 import { getCurrentAppUser } from '@/lib/users/data'
 import { ROLE_LABELS } from '@/lib/users/roles'
 import { ApplicationLayout } from './application-layout'
+import type { Theme } from './theme-toggle'
 
 // The dashboard is authenticated and renders per-user (Clerk session + live
 // Supabase data), so it must never be statically prerendered at build time.
@@ -20,8 +21,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const me = await getCurrentAppUser()
 
+  // Theme is a device preference stored in a cookie (default light). Passed in
+  // so the switcher highlights the right option without a hydration mismatch.
+  const themeCookie = (await cookies()).get('theme')?.value
+  const initialTheme: Theme =
+    themeCookie === 'dark' || themeCookie === 'system' || themeCookie === 'light' ? themeCookie : 'light'
+
   return (
-    <ApplicationLayout installOrigin={origin} userName={me.name} userRole={ROLE_LABELS[me.role]}>
+    <ApplicationLayout
+      installOrigin={origin}
+      userName={me.name}
+      userRole={ROLE_LABELS[me.role]}
+      initialTheme={initialTheme}
+    >
       {children}
     </ApplicationLayout>
   )
