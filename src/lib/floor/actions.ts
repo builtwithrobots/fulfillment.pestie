@@ -22,8 +22,6 @@ import { assertRole } from '@/lib/users/data'
 const IMAGE_BUCKET = 'floor-plans'
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
-export type { ActionResult }
-
 // Validate the session + require at least `min`. Returns an error string to
 // short-circuit on, or null when the caller is allowed.
 async function gate(min: AppRole): Promise<string | null> {
