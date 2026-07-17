@@ -5,7 +5,7 @@ import { Heading } from '@/components/heading'
 import { formatDate } from '@/lib/format'
 import { listRoster } from '@/lib/roster/data'
 import { Card } from '../studies/ui'
-import { AddWorkerButton, WorkerRowActions } from './roster-actions'
+import { AddWorkerButton, ImportCsvButton, WorkerRowActions } from './roster-actions'
 
 export const metadata = { title: 'Roster' }
 
@@ -21,7 +21,10 @@ export default async function RosterPage() {
           <Heading>Roster</Heading>
           <p className="mt-1 text-sm text-zinc-500">Employees and their measured performance across time studies.</p>
         </div>
-        <AddWorkerButton />
+        <div className="flex items-center gap-2">
+          <ImportCsvButton />
+          <AddWorkerButton />
+        </div>
       </div>
 
       {roster.length === 0 ? (

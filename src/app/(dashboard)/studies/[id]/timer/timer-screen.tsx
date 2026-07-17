@@ -153,16 +153,32 @@ export function TimerScreen({
     createRosterWorker(name)
       .then((res) => {
         if (!res.ok) {
-          showToast(`Couldn't add person: ${res.error}`)
+          if (res.existing) {
+            // Already on the roster — select them instead of duplicating.
+            const existing = res.existing
+            setWorkers((prev) =>
+              prev.some((w) => w.id === existing.id)
+                ? prev
+                : [...prev, { id: existing.id, fullName: existing.fullName }].sort((a, b) =>
+                    a.fullName.localeCompare(b.fullName)
+                  )
+            )
+            setWorkerId(existing.id)
+            setNewWorkerName('')
+            showToast(`${existing.fullName} is already on the roster — selected.`)
+          } else {
+            showToast(`Couldn't add person: ${res.error}`)
+          }
           return
         }
         setWorkers((prev) =>
-          [...prev, { id: res.data.id, fullName: res.data.fullName }].sort((a, b) =>
-            a.fullName.localeCompare(b.fullName)
-          )
+          [...prev, { id: res.id, fullName: res.fullName }].sort((a, b) => a.fullName.localeCompare(b.fullName))
         )
-        setWorkerId(res.data.id)
+        setWorkerId(res.id)
         setNewWorkerName('')
+        if (res.similarNames.length > 0) {
+          showToast(`Added. Similar name(s) on roster: ${res.similarNames.join(', ')}`)
+        }
       })
       .catch(() => showToast('Couldn’t add person: network error.'))
   }
