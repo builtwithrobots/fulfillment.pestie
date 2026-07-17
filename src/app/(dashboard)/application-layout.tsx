@@ -36,7 +36,7 @@ const nav = [
   { href: '/studies', label: 'Time studies', icon: Timer, soon: false },
   { href: '/shifts', label: 'Shift Planning', icon: ClipboardList, soon: true },
   { href: '/labor', label: 'Labor Allocation', icon: Users, soon: true },
-  { href: '/floor', label: 'Floor Layout', icon: LayoutGrid, soon: false },
+  { href: '/floor', label: 'Floor Layout', icon: LayoutGrid, soon: true },
   { href: '/lines', label: 'Lines & Stations', icon: ListChecks, soon: true },
   { href: '/displays', label: 'Displays', icon: Tv, soon: true },
 ]

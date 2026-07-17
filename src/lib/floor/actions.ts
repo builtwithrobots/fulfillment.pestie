@@ -56,6 +56,7 @@ export type ShapePatch = Partial<{
   color: string
   stationId: string | null
   plannedHeadcount: number
+  locked: boolean
 }>
 
 // ---------------------------------------------------------------------------
@@ -145,7 +146,7 @@ export async function duplicatePlan(planId: string): Promise<ActionResult<{ id: 
 
   const { data: shapes, error: shapesError } = await supabase
     .from('floor_shapes')
-    .select('kind, shape, x, y, w, h, rotation, label, color, station_id, planned_headcount, sort_order')
+    .select('kind, shape, x, y, w, h, rotation, label, color, station_id, planned_headcount, sort_order, locked')
     .eq('plan_id', planId)
   if (shapesError) return { ok: false, error: shapesError.message }
 
@@ -247,6 +248,7 @@ export async function updateShape(shapeId: string, patch: ShapePatch): Promise<A
     color: string
     station_id: string | null
     planned_headcount: number
+    locked: boolean
   }> = {}
   if (patch.x !== undefined) payload.x = patch.x
   if (patch.y !== undefined) payload.y = patch.y
@@ -258,6 +260,7 @@ export async function updateShape(shapeId: string, patch: ShapePatch): Promise<A
   if (patch.color !== undefined) payload.color = patch.color
   if (patch.stationId !== undefined) payload.station_id = patch.stationId
   if (patch.plannedHeadcount !== undefined) payload.planned_headcount = patch.plannedHeadcount
+  if (patch.locked !== undefined) payload.locked = patch.locked
   if (Object.keys(payload).length === 0) return { ok: true }
 
   const { error } = await supabase.from('floor_shapes').update(payload).eq('id', shapeId)

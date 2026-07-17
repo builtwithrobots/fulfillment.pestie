@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, Copy, ImageUp, Square, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Copy, ImageUp, Lock, LockOpen, Minus, Plus, Square, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 
@@ -36,6 +36,11 @@ const MIN_SIZE = 40
 const AREA_COLOR = '#38bdf8'
 const STATION_COLOR = '#34d399'
 
+// Zoom bounds for the +/- canvas-size control.
+const ZOOM_MIN = 0.4
+const ZOOM_MAX = 2.5
+const ZOOM_STEP = 1.2
+
 type DragState = {
   mode: 'move' | 'resize'
   id: string
@@ -64,6 +69,7 @@ export function FloorEditor({
   const [uploading, setUploading] = useState(false)
   const [workers, setWorkers] = useState<Worker[]>(initialWorkers)
   const [assignments, setAssignments] = useState<StationAssignment[]>(initialAssignments)
+  const [zoom, setZoom] = useState(1)
   const [, startTransition] = useTransition()
 
   const svgRef = useRef<SVGSVGElement>(null)
@@ -135,6 +141,11 @@ export function FloorEditor({
   // --- drag / resize ---------------------------------------------------------
   function beginDrag(e: React.PointerEvent, shape: FloorShape, mode: 'move' | 'resize') {
     e.stopPropagation()
+    // Locked shapes can be selected (to unlock) but never moved or resized.
+    if (shape.locked) {
+      setSelectedId(shape.id)
+      return
+    }
     const p = toCanvas(e)
     if (!p) return
     setSelectedId(shape.id)
@@ -204,6 +215,7 @@ export function FloorEditor({
         stationId: null,
         plannedHeadcount: 0,
         sortOrder: shapes.length,
+        locked: false,
       }
       setShapes((prev) => [...prev, created])
       setSelectedId(created.id)
@@ -247,6 +259,7 @@ export function FloorEditor({
         y,
         stationId: null,
         sortOrder: shapes.length,
+        locked: false, // new shapes start unlocked (matches the DB default)
       }
       setShapes((prev) => [...prev, copy])
       setSelectedId(copy.id)
@@ -335,7 +348,9 @@ export function FloorEditor({
               <h1 className="text-xl font-semibold text-zinc-950 dark:text-white">{plan.name}</h1>
               {plan.isActive && <Badge color="green">Active</Badge>}
             </div>
-            <p className="text-sm text-zinc-500">Drag to move, drag the corner handle to resize.</p>
+            <p className="text-sm text-zinc-500">
+              Drag to move, drag the corner to resize, lock to pin in place.
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -354,13 +369,41 @@ export function FloorEditor({
       <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         {/* Canvas */}
         <div className="min-w-0">
-          <div className="mb-3 flex gap-2">
-            <Button color="sky" onClick={() => addShape('area')}>
-              <Square className="size-4" /> Add area
-            </Button>
-            <Button color="emerald" onClick={() => addShape('station')}>
-              <Users className="size-4" /> Add station
-            </Button>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex gap-2">
+              <Button color="sky" onClick={() => addShape('area')}>
+                <Square className="size-4" /> Add area
+              </Button>
+              <Button color="emerald" onClick={() => addShape('station')}>
+                <Users className="size-4" /> Add station
+              </Button>
+            </div>
+            {/* Grid size / zoom -- purely visual, for easier viewing on any device. */}
+            <div className="flex items-center gap-1">
+              <Button
+                plain
+                onClick={() => setZoom((z) => clamp(z / ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
+                aria-label="Decrease grid size"
+              >
+                <Minus className="size-4" />
+              </Button>
+              <button
+                type="button"
+                onClick={() => setZoom(1)}
+                className="w-12 text-center text-xs text-zinc-500 tabular-nums hover:text-zinc-800 dark:hover:text-zinc-200"
+                aria-label="Reset grid size"
+                title="Reset grid size"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <Button
+                plain
+                onClick={() => setZoom((z) => clamp(z * ZOOM_STEP, ZOOM_MIN, ZOOM_MAX))}
+                aria-label="Increase grid size"
+              >
+                <Plus className="size-4" />
+              </Button>
+            </div>
           </div>
 
           <div className="max-h-[calc(100svh-11rem)] overflow-auto rounded-xl bg-zinc-100 ring-1 ring-zinc-950/10 dark:bg-zinc-800 dark:ring-white/10">
@@ -368,7 +411,7 @@ export function FloorEditor({
               ref={svgRef}
               viewBox={`0 0 ${W} ${H}`}
               className="block h-auto touch-none select-none"
-              style={{ width: '100%', minWidth: MIN_CANVAS_PX }}
+              style={{ width: Math.round(MIN_CANVAS_PX * zoom) }}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerDown={() => setSelectedId(null)}
@@ -488,7 +531,7 @@ function ShapeNode({
       : `${assignedNames.length} / ${shape.plannedHeadcount} staffed`
 
   return (
-    <g className="cursor-move" onPointerDown={onDown}>
+    <g className={shape.locked ? 'cursor-default' : 'cursor-move'} onPointerDown={onDown}>
       {shape.shape === 'circle' ? (
         <ellipse
           cx={cx}
@@ -548,30 +591,39 @@ function ShapeNode({
         </g>
       )}
 
-      {/* Selection outline + resize handle */}
+      {/* Selection outline (always when selected) */}
       {selected && (
-        <>
-          <rect
-            x={shape.x - 3}
-            y={shape.y - 3}
-            width={shape.w + 6}
-            height={shape.h + 6}
-            fill="none"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            rx={10}
-          />
-          <rect
-            x={shape.x + shape.w - 7}
-            y={shape.y + shape.h - 7}
-            width={14}
-            height={14}
-            rx={3}
-            fill="#3b82f6"
-            className="cursor-nwse-resize"
-            onPointerDown={onResize}
-          />
-        </>
+        <rect
+          x={shape.x - 3}
+          y={shape.y - 3}
+          width={shape.w + 6}
+          height={shape.h + 6}
+          fill="none"
+          stroke="#3b82f6"
+          strokeWidth={2}
+          rx={10}
+        />
+      )}
+      {/* Resize handle -- only when selected AND unlocked */}
+      {selected && !shape.locked && (
+        <rect
+          x={shape.x + shape.w - 7}
+          y={shape.y + shape.h - 7}
+          width={14}
+          height={14}
+          rx={3}
+          fill="#3b82f6"
+          className="cursor-nwse-resize"
+          onPointerDown={onResize}
+        />
+      )}
+      {/* Lock badge -- a small padlock in the top-right of locked shapes */}
+      {shape.locked && (
+        <g style={{ pointerEvents: 'none' }} transform={`translate(${shape.x + shape.w - 20}, ${shape.y + 6})`}>
+          <rect width={14} height={14} rx={7} fill="#000" fillOpacity={0.45} />
+          <rect x={4.5} y={6.5} width={5} height={4.5} rx={1} fill="#fff" />
+          <path d="M5.2 6.5 v-1.1 a1.8 1.8 0 0 1 3.6 0 v1.1" fill="none" stroke="#fff" strokeWidth={1} />
+        </g>
       )}
     </g>
   )
@@ -612,6 +664,21 @@ function ShapeInspector({
           {shape.kind === 'area' ? 'Area' : 'Station'}
         </span>
         <div className="flex items-center gap-1">
+          <Button
+            plain
+            onClick={() => {
+              onChange({ locked: !shape.locked })
+              onCommit({ locked: !shape.locked })
+            }}
+            aria-label={shape.locked ? 'Unlock shape' : 'Lock shape'}
+            title={shape.locked ? 'Unlock (allow move/resize)' : 'Lock in place'}
+          >
+            {shape.locked ? (
+              <Lock className="size-4 text-blue-600 dark:text-blue-400" />
+            ) : (
+              <LockOpen className="size-4" />
+            )}
+          </Button>
           <Button plain onClick={onDuplicate} aria-label="Duplicate shape">
             <Copy className="size-4" />
           </Button>
@@ -620,6 +687,11 @@ function ShapeInspector({
           </Button>
         </div>
       </div>
+      {shape.locked && (
+        <p className="-mt-2 flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400">
+          <Lock className="size-3.5" /> Locked -- unlock to move or resize.
+        </p>
+      )}
 
       <Field>
         <Label>Label</Label>

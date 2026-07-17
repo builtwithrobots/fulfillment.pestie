@@ -68,6 +68,7 @@ function mapShape(row: {
   station_id: string | null
   planned_headcount: number
   sort_order: number
+  locked: boolean
 }): FloorShape {
   return {
     id: row.id,
@@ -83,6 +84,7 @@ function mapShape(row: {
     stationId: row.station_id,
     plannedHeadcount: row.planned_headcount,
     sortOrder: row.sort_order,
+    locked: row.locked,
   }
 }
 
@@ -146,7 +148,7 @@ export async function getShapes(planId: string): Promise<FloorShape[]> {
 
   const { data, error } = await supabase
     .from('floor_shapes')
-    .select('id, kind, shape, x, y, w, h, rotation, label, color, station_id, planned_headcount, sort_order')
+    .select('id, kind, shape, x, y, w, h, rotation, label, color, station_id, planned_headcount, sort_order, locked')
     .eq('plan_id', planId)
     .order('sort_order', { ascending: true })
   if (error) throw error

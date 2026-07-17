@@ -22,6 +22,7 @@ export type FloorShape = {
   stationId: string | null
   plannedHeadcount: number
   sortOrder: number
+  locked: boolean
 }
 
 export type Point = { x: number; y: number }
