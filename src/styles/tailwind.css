@@ -14,33 +14,45 @@
 }
 
 /*
- * Dashboard page surface: a subtle, modern depth background the cards float on.
- * A faint green base (a much lighter take on the brand badge green #16a34a),
- * two soft ambient glows for atmosphere, and a barely-there dot grid for
- * texture. Decorative only -- sits behind cards, so it never affects text
- * contrast. Dark mode uses lighter, cooler-green tonal variants per contrast
- * best practice. Dark follows the system preference (Tailwind's default).
+ * Dashboard page surface: a modern, layered depth background the cards float
+ * on. Static (no animation). Layers, front to back: fine film grain, a dot
+ * grid, a multi-blob green "mesh" gradient, and a soft edge vignette, over a
+ * light green base (a darker, more present take on the brand badge green
+ * #16a34a). Decorative only -- sits behind cards, so it never affects text
+ * contrast. Dark mode uses lighter, cooler-green tonal variants and a darker
+ * vignette per contrast best practice; keyed off the .dark class.
+ *
+ * --grain is a self-contained SVG fractal-noise tile with its alpha knocked
+ * down to ~6% so it reads as texture, not static.
  */
 @layer components {
   .app-surface {
-    background-color: #f6faf6;
+    --grain: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='140'%20height='140'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.8'%20numOctaves='2'%20stitchTiles='stitch'/%3E%3CfeComponentTransfer%3E%3CfeFuncA%20type='linear'%20slope='0.06'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect%20width='100%25'%20height='100%25'%20filter='url(%23n)'/%3E%3C/svg%3E");
+
+    background-color: #e7f1ea;
     background-image:
-      radial-gradient(1100px 560px at 100% -6%, rgba(22, 163, 74, 0.07), transparent 60%),
-      radial-gradient(900px 520px at -8% 12%, rgba(22, 163, 74, 0.05), transparent 55%),
-      radial-gradient(circle at 1px 1px, rgba(22, 163, 74, 0.05) 1px, transparent 1.7px);
+      var(--grain), radial-gradient(circle at 1px 1px, rgba(22, 101, 52, 0.07) 1px, transparent 1.7px),
+      radial-gradient(60rem 42rem at 96% -8%, rgba(22, 163, 74, 0.16), transparent 60%),
+      radial-gradient(46rem 40rem at -6% 8%, rgba(22, 163, 74, 0.12), transparent 55%),
+      radial-gradient(42rem 40rem at 45% 118%, rgba(16, 185, 129, 0.1), transparent 60%),
+      radial-gradient(130% 120% at 50% 30%, transparent 52%, rgba(6, 46, 26, 0.08));
     background-size:
+      140px 140px,
+      22px 22px,
       auto,
       auto,
-      22px 22px;
-    background-repeat: no-repeat, no-repeat, repeat;
-    background-position: center, center, center;
+      auto,
+      auto;
+    background-repeat: repeat, repeat, no-repeat, no-repeat, no-repeat, no-repeat;
   }
 
   :where(.dark) .app-surface {
-    background-color: #18181b; /* zinc-900 */
+    background-color: #141416;
     background-image:
-      radial-gradient(1100px 560px at 100% -6%, rgba(34, 197, 94, 0.1), transparent 60%),
-      radial-gradient(900px 520px at -8% 12%, rgba(34, 197, 94, 0.06), transparent 55%),
-      radial-gradient(circle at 1px 1px, rgba(52, 211, 153, 0.055) 1px, transparent 1.7px);
+      var(--grain), radial-gradient(circle at 1px 1px, rgba(52, 211, 153, 0.06) 1px, transparent 1.7px),
+      radial-gradient(60rem 42rem at 96% -8%, rgba(34, 197, 94, 0.16), transparent 60%),
+      radial-gradient(46rem 40rem at -6% 8%, rgba(34, 197, 94, 0.1), transparent 55%),
+      radial-gradient(42rem 40rem at 45% 118%, rgba(16, 185, 129, 0.08), transparent 60%),
+      radial-gradient(130% 120% at 50% 30%, transparent 48%, rgba(0, 0, 0, 0.38));
   }
 }
