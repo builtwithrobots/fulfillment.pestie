@@ -1,11 +1,11 @@
 import { Badge } from '@/components/badge'
-import { Divider } from '@/components/divider'
 import { AnimatedNumber } from '@/components/motion'
 import type { NumberFormat } from '@/lib/format'
 
 /**
- * KPI tile. The value counts up on mount (via AnimatedNumber, which respects
- * reduced motion) and the week-over-week change renders as a Catalyst Badge.
+ * KPI card tile. Sits on a card so it floats on the dashboard surface. The
+ * value counts up on mount (via AnimatedNumber, which respects reduced motion)
+ * and the week-over-week change renders as a Catalyst Badge.
  */
 export function Stat({
   title,
@@ -20,13 +20,12 @@ export function Stat({
 }) {
   const up = changePct >= 0
   return (
-    <div>
-      <Divider />
-      <div className="mt-6 text-lg/6 font-medium sm:text-sm/6">{title}</div>
-      <div className="mt-3 text-3xl/8 font-semibold sm:text-2xl/8">
+    <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
+      <div className="text-sm/6 font-medium text-zinc-500 dark:text-zinc-400">{title}</div>
+      <div className="mt-2 text-2xl/8 font-semibold text-zinc-950 tabular-nums dark:text-white">
         <AnimatedNumber value={value} format={format} />
       </div>
-      <div className="mt-3 text-sm/6 sm:text-xs/6">
+      <div className="mt-2 text-xs/6">
         <Badge color={up ? 'lime' : 'pink'}>
           {up ? '+' : ''}
           {changePct}%
