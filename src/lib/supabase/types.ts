@@ -103,6 +103,7 @@ export type Database = {
         station_id: string | null
         planned_headcount: number
         sort_order: number
+        locked: boolean
         created_at: string
         updated_at: string
       }>
