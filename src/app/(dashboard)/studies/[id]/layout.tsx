@@ -1,12 +1,13 @@
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
+import { StudyHelp } from './study-help'
 import { StudyTabs } from './study-tabs'
 
 /**
  * Shared chrome for a single study: back to the list on the left, the
- * Setup | Timer | Results switcher on the right. Pages keep their own
- * headings/content below.
+ * Setup | Timer | Results switcher (plus the how-it-works help) on the right.
+ * Pages keep their own headings/content below.
  */
 export default async function StudyLayout({
   children,
@@ -26,7 +27,10 @@ export default async function StudyLayout({
         >
           <ArrowLeft className="size-4" /> All studies
         </Link>
-        <StudyTabs studyId={id} />
+        <div className="flex items-center gap-1.5">
+          <StudyHelp />
+          <StudyTabs studyId={id} />
+        </div>
       </div>
       {children}
     </div>

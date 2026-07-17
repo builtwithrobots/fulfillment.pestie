@@ -7,20 +7,9 @@ import { Button } from '@/components/button'
 import { Heading } from '@/components/heading'
 import { getWorkerProfile } from '@/lib/roster/data'
 import { fmtMs } from '@/lib/time-study'
-import { Card, CardTitle } from '../../studies/ui'
+import { Card, CardTitle, Stat } from '../../studies/ui'
 
 export const metadata = { title: 'Employee profile' }
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="rounded-lg bg-zinc-50 p-4 text-center ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10">
-      <div className={`font-mono text-xl font-bold tabular-nums ${tone ?? 'text-zinc-950 dark:text-white'}`}>
-        {value}
-      </div>
-      <div className="mt-1 text-[11px] tracking-wide text-zinc-500 uppercase">{label}</div>
-    </div>
-  )
-}
 
 export default async function WorkerProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

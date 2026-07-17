@@ -1,7 +1,6 @@
 'use client'
 
 import { ArrowRight, FileText, Play, RotateCcw, Save, Square, UserPlus } from 'lucide-react'
-import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/badge'
@@ -21,6 +20,10 @@ type WorkerOption = { id: string; fullName: string }
 // render-purity analysis — every call site below is an event handler.
 const nowMs = () => Date.now()
 
+// Sentinel <option> value meaning "follow the session-level Timing picker" in
+// the per-step selector ('' is taken by Unattributed).
+const FOLLOW_SESSION = '__session__'
+
 export function TimerScreen({
   studyId,
   title,
@@ -28,6 +31,7 @@ export function TimerScreen({
   initialSteps,
   initialMasterRuns,
   initialWorkers,
+  workerNames,
 }: {
   studyId: string
   title: string
@@ -35,9 +39,9 @@ export function TimerScreen({
   initialSteps: StepWithObservations[]
   initialMasterRuns: Observation[]
   initialWorkers: WorkerOption[]
+  /** id → name for EVERY worker (incl. inactive), so old tooltips resolve. */
+  workerNames: Record<string, string>
 }) {
-  const router = useRouter()
-
   const [steps, setSteps] = useState<LiveStep[]>(() => initialSteps.map((s) => ({ ...s, startTs: null })))
   const [master, setMaster] = useState<{ startTs: number | null; elapsed: number; runs: Observation[] }>({
     startTs: null,
@@ -46,8 +50,11 @@ export function TimerScreen({
   })
   // Who is being timed: stamped onto every observation/run recorded while
   // selected. Null = unattributed, so timing never blocks on roster hygiene.
+  // Steps can override this individually (stepWorkers) for line studies where
+  // different people run different steps at the same time.
   const [workers, setWorkers] = useState<WorkerOption[]>(initialWorkers)
   const [workerId, setWorkerId] = useState<string | null>(null)
+  const [stepWorkers, setStepWorkers] = useState<Record<string, string | null>>({})
   const [newWorkerName, setNewWorkerName] = useState('')
   const [now, setNow] = useState(() => nowMs())
   const [toast, setToast] = useState<string | null>(null)
@@ -79,19 +86,23 @@ export function TimerScreen({
     } else {
       // Stop → record ONE observation immediately (no batching)
       const elapsed = nowMs() - step.startTs
-      const obs: Observation = { durationMs: elapsed, workerId }
+      const stampedWorker = workerForStep(id)
+      const obs: Observation = { durationMs: elapsed, workerId: stampedWorker }
       setSteps((prev) =>
         prev.map((s) => (s.id === id ? { ...s, startTs: null, observations: [...s.observations, obs] } : s))
       )
-      recordObservation(studyId, id, elapsed, workerId).then((res) => {
-        if (!res.ok) {
-          // Roll back the optimistic observation (by reference).
-          setSteps((prev) =>
-            prev.map((s) => (s.id === id ? { ...s, observations: s.observations.filter((o) => o !== obs) } : s))
-          )
-          showToast(`Couldn't save observation: ${res.error}`)
-        }
-      })
+      const rollback = (reason: string) => {
+        // Roll back the optimistic observation (by reference).
+        setSteps((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, observations: s.observations.filter((o) => o !== obs) } : s))
+        )
+        showToast(`Couldn't save observation: ${reason}`)
+      }
+      recordObservation(studyId, id, elapsed, stampedWorker)
+        .then((res) => {
+          if (!res.ok) rollback(res.error)
+        })
+        .catch(() => rollback('network error — check your connection.'))
     }
   }
 
@@ -115,34 +126,52 @@ export function TimerScreen({
     if (value <= 0) return
     const run: Observation = { durationMs: value, workerId }
     setMaster((m) => ({ ...m, startTs: null, elapsed: 0, runs: [...m.runs, run] }))
-    recordMasterRun(studyId, value, workerId).then((res) => {
-      if (res.ok) {
-        showToast(`Master run saved.`)
-      } else {
-        setMaster((m) => ({ ...m, runs: m.runs.filter((r) => r !== run) }))
-        showToast(`Couldn't save run: ${res.error}`)
-      }
-    })
+    const rollback = (reason: string) => {
+      // Restore the elapsed value so a failed save never discards the timing.
+      setMaster((m) => ({
+        ...m,
+        elapsed: m.startTs === null ? value : m.elapsed,
+        runs: m.runs.filter((r) => r !== run),
+      }))
+      showToast(`Couldn't save run: ${reason}`)
+    }
+    recordMasterRun(studyId, value, workerId)
+      .then((res) => {
+        if (res.ok) {
+          showToast(`Master run saved.`)
+        } else {
+          rollback(res.error)
+        }
+      })
+      .catch(() => rollback('network error — check your connection.'))
   }
 
   // ── Worker attribution ───────────────────────────────────────
   function addWorker() {
     const name = newWorkerName.trim()
     if (!name) return
-    createRosterWorker(name).then((res) => {
-      if (!res.ok) {
-        showToast(`Couldn't add person: ${res.error}`)
-        return
-      }
-      setWorkers((prev) =>
-        [...prev, { id: res.data.id, fullName: res.data.fullName }].sort((a, b) => a.fullName.localeCompare(b.fullName))
-      )
-      setWorkerId(res.data.id)
-      setNewWorkerName('')
-    })
+    createRosterWorker(name)
+      .then((res) => {
+        if (!res.ok) {
+          showToast(`Couldn't add person: ${res.error}`)
+          return
+        }
+        setWorkers((prev) =>
+          [...prev, { id: res.data.id, fullName: res.data.fullName }].sort((a, b) =>
+            a.fullName.localeCompare(b.fullName)
+          )
+        )
+        setWorkerId(res.data.id)
+        setNewWorkerName('')
+      })
+      .catch(() => showToast('Couldn’t add person: network error.'))
   }
 
-  const workerName = (id: string | null) => (id ? (workers.find((w) => w.id === id)?.fullName ?? null) : null)
+  const workerName = (id: string | null) =>
+    id ? (workers.find((w) => w.id === id)?.fullName ?? workerNames[id] ?? null) : null
+
+  /** The worker an observation on this step gets stamped with right now. */
+  const workerForStep = (stepId: string) => (stepId in stepWorkers ? stepWorkers[stepId] : workerId)
 
   function resetMaster() {
     setMaster((m) => ({ ...m, startTs: null, elapsed: 0 }))
@@ -232,7 +261,8 @@ export function TimerScreen({
         <p className="mt-2 text-xs text-zinc-500">
           {workerId
             ? `Recordings are attributed to ${workerName(workerId)} and appear on their roster profile.`
-            : 'Pick who you’re observing to build their roster profile (optional).'}
+            : 'Pick who you’re observing to build their roster profile (optional).'}{' '}
+          Timing different people on different steps? Override per step below.
         </p>
       </Card>
 
@@ -330,6 +360,33 @@ export function TimerScreen({
                     <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs text-zinc-500 dark:bg-white/5">
                       {step.observations.length} obs
                     </span>
+                    {/* Per-step attribution override, for line studies where
+                        different people run different steps simultaneously. */}
+                    <Select
+                      value={step.id in stepWorkers ? (stepWorkers[step.id] ?? '') : FOLLOW_SESSION}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setStepWorkers((prev) => {
+                          if (v === FOLLOW_SESSION) {
+                            const { [step.id]: _dropped, ...rest } = prev
+                            return rest
+                          }
+                          return { ...prev, [step.id]: v || null }
+                        })
+                      }}
+                      aria-label={`Person timed on ${step.name}`}
+                      className="ml-auto max-w-48"
+                    >
+                      <option value={FOLLOW_SESSION}>
+                        {workerName(workerId) ? `Timing: ${workerName(workerId)}` : 'Timing: session pick'}
+                      </option>
+                      <option value="">— Unattributed —</option>
+                      {workers.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.fullName}
+                        </option>
+                      ))}
+                    </Select>
                   </div>
                   {step.observations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">

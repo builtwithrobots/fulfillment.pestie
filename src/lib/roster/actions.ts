@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import type { ActionResult } from '@/lib/action-result'
 import { requireUserId } from '@/lib/studies/data'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 
@@ -12,9 +13,6 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
  * path). Every action validates the Clerk session before writing through the
  * service-role client.
  */
-
-export type ActionResult<T = undefined> =
-  ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string }
 
 export async function createRosterWorker(fullName: string): Promise<ActionResult<{ id: string; fullName: string }>> {
   await requireUserId()

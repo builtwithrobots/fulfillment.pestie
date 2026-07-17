@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react'
+import { Plus, Printer } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
@@ -7,24 +7,13 @@ import { Heading } from '@/components/heading'
 import { workerNameMap } from '@/lib/roster/data'
 import { getStudyWithObservations } from '@/lib/studies/data'
 import { computePerWorker, computeResults, fmtMs, resultsToPlainText } from '@/lib/time-study'
-import { Card, CardTitle } from '../../ui'
+import { Card, CardTitle, Stat } from '../../ui'
 import { CopyResultsButton } from './copy-button'
 
 export const metadata = { title: 'Results' }
 
 function money(v: number, wage: number) {
   return wage > 0 ? `$${v.toFixed(4)}` : '—'
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="rounded-lg bg-zinc-50 p-4 text-center ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10">
-      <div className={`font-mono text-xl font-bold tabular-nums ${tone ?? 'text-zinc-950 dark:text-white'}`}>
-        {value}
-      </div>
-      <div className="mt-1 text-[11px] tracking-wide text-zinc-500 uppercase">{label}</div>
-    </div>
-  )
 }
 
 export default async function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -41,6 +30,12 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
   const chartSteps = r.steps.filter((s) => s.timed && s.obsCount > 0)
   const maxAvg = Math.max(0, ...chartSteps.map((s) => s.avgMs))
 
+  // Headline KPIs: prefer per-step math; fall back to master-run stats so a
+  // whole-process-only study still calculates. Runs count as observations.
+  const cycleMs = chartSteps.length > 0 ? r.totalMs : (r.master?.avgMs ?? 0)
+  const cycleCost = chartSteps.length > 0 ? r.totalCost : (r.master?.avgCost ?? 0)
+  const totalRecordings = r.totalObs + (r.master?.runs.length ?? 0)
+
   return (
     <div className="mx-auto max-w-3xl">
       <Heading>{study.title}</Heading>
@@ -53,15 +48,15 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat
           label="Avg cycle time"
-          value={chartSteps.length > 0 ? fmtMs(r.totalMs) : '—'}
+          value={cycleMs > 0 ? fmtMs(cycleMs) : '—'}
           tone="text-blue-600 dark:text-blue-400"
         />
         <Stat
           label="Labor cost / unit"
-          value={wage > 0 && chartSteps.length > 0 ? money(r.totalCost, wage) : '—'}
+          value={wage > 0 && cycleMs > 0 ? money(cycleCost, wage) : '—'}
           tone="text-emerald-600 dark:text-emerald-400"
         />
-        <Stat label="Total observations" value={String(r.totalObs)} />
+        <Stat label="Total observations" value={String(totalRecordings)} />
       </div>
 
       {/* Master timer results */}
@@ -91,11 +86,11 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
               return (
                 <li
                   key={i}
-                  className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-white/5"
+                  className="grid grid-cols-[1fr_auto_5.5rem] items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-white/5"
                 >
                   <span className="text-zinc-500">Run {i + 1}</span>
-                  <span className="font-mono font-semibold tabular-nums">{fmtMs(ms)}</span>
-                  <span className="text-xs text-zinc-500">{tag}</span>
+                  <span className="text-right font-mono font-semibold tabular-nums">{fmtMs(ms)}</span>
+                  <span className="text-right text-xs text-zinc-500">{tag}</span>
                 </li>
               )
             })}
@@ -253,6 +248,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
 
       <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <CopyResultsButton text={copyText} />
+        <Button outline href={`/studies/${study.id}/results/print`} target="_blank">
+          <Printer className="size-4" /> Export PDF
+        </Button>
         <Button plain href="/studies/new">
           <Plus className="size-4" /> New study
         </Button>

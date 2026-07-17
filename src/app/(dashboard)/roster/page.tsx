@@ -2,15 +2,12 @@ import Link from 'next/link'
 
 import { Badge } from '@/components/badge'
 import { Heading } from '@/components/heading'
+import { formatDate } from '@/lib/format'
 import { listRoster } from '@/lib/roster/data'
 import { Card } from '../studies/ui'
 import { AddWorkerButton, WorkerRowActions } from './roster-actions'
 
 export const metadata = { title: 'Roster' }
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export default async function RosterPage() {
   const roster = await listRoster()
