@@ -28,8 +28,6 @@ export type StudyInput = {
   steps: StepInput[]
 }
 
-export type { ActionResult }
-
 function validate(input: StudyInput): string | null {
   if (!input.title.trim()) return 'Please enter a study title.'
   if (input.steps.length === 0) return 'Add at least one step to begin.'
