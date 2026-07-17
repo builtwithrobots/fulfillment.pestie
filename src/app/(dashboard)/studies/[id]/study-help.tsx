@@ -39,6 +39,11 @@ export function StudyHelp() {
               If different people run different steps at the same time, use the small selector on each step card to
               attribute that step&apos;s timings to the right person.
             </p>
+            <p className="mt-1.5">
+              Timing a multi-step process as one flow? Switch to <em>Cycle</em> mode and tap through the steps in order
+              — each split is saved to that step&apos;s assigned person, so you get real per-step times and per-person
+              roster stats from a single continuous run.
+            </p>
           </section>
 
           <section>
