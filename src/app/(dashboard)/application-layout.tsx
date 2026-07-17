@@ -23,6 +23,7 @@ import {
 import { SidebarLayout } from '@/components/sidebar-layout'
 import { AUTH_ENABLED } from '@/lib/auth-config'
 import { InstallQR } from './install-qr'
+import { type Theme, ThemeToggle } from './theme-toggle'
 
 function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -70,11 +71,13 @@ export function ApplicationLayout({
   installOrigin,
   userName,
   userRole,
+  initialTheme,
 }: {
   children: React.ReactNode
   installOrigin: string
   userName: string
   userRole: string
+  initialTheme: Theme
 }) {
   const pathname = usePathname()
 
@@ -139,6 +142,12 @@ export function ApplicationLayout({
             <SidebarFooter>
               {/* Scan-to-install QR for the phone PWA */}
               <InstallQR origin={installOrigin} />
+              <SidebarDivider />
+              {/* Theme switcher */}
+              <div className="flex items-center justify-between gap-2 px-2 py-1">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">Theme</span>
+                <ThemeToggle initialTheme={initialTheme} />
+              </div>
               <SidebarDivider />
               {/* Account chip: role above name (real Clerk name once auth is on) */}
               <div className="flex items-center gap-3 px-2 py-1">

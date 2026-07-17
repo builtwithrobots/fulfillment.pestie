@@ -11,7 +11,7 @@ export function Card({ className, ...props }: React.ComponentPropsWithoutRef<'di
     <div
       className={clsx(
         className,
-        'rounded-xl bg-white p-5 ring-1 ring-zinc-950/5 sm:p-6 dark:bg-zinc-900 dark:ring-white/10'
+        'rounded-xl bg-white p-5 shadow-sm ring-1 ring-zinc-950/5 sm:p-6 dark:bg-zinc-900 dark:ring-white/10'
       )}
       {...props}
     />
