@@ -7,6 +7,21 @@
  */
 import type { FloorShapeGeometry, FloorShapeKind } from '@/lib/supabase/types'
 
+// Default virtual canvas for plans without a background image. Shared by the
+// editor and the print view so both render the same coordinate space.
+export const DEFAULT_CANVAS_W = 2400
+export const DEFAULT_CANVAS_H = 1500
+
+/** Visual-only annotations: never counted in the labor roll-up. */
+export function isAnnotation(kind: FloorShapeKind): boolean {
+  return kind === 'label' || kind === 'arrow' || kind === 'figure'
+}
+
+/** Normalize an angle in degrees into [0, 360). */
+export function normalizeDeg(deg: number): number {
+  return ((deg % 360) + 360) % 360
+}
+
 /** Camel-cased shape used throughout the UI (mapped from the DB row in data.ts). */
 export type FloorShape = {
   id: string
@@ -50,6 +65,36 @@ export function areaOfStation(station: FloorShape, areas: FloorShape[]): string 
   return best?.id ?? null
 }
 
+/** Group station assignments by real station id. */
+export function groupAssignments<T extends { stationId: string }>(rows: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>()
+  for (const r of rows) {
+    const list = map.get(r.stationId) ?? []
+    list.push(r)
+    map.set(r.stationId, list)
+  }
+  return map
+}
+
+/**
+ * Names to show on a station shape: the assigned names for a linked station,
+ * null for everything else (areas, annotations, unlinked stations).
+ */
+export function assignedNamesFor(shape: FloorShape, byStation: Map<string, { fullName: string }[]>): string[] | null {
+  if (shape.kind !== 'station' || !shape.stationId) return null
+  return (byStation.get(shape.stationId) ?? []).map((a) => a.fullName)
+}
+
+/**
+ * Canvas paint order: areas at the bottom, stations above them (so they stay
+ * clickable), annotations on top (arrows/labels overlay both). sortOrder
+ * breaks ties within each band.
+ */
+export function zOrdered(shapes: FloorShape[]): FloorShape[] {
+  const band = (s: FloorShape) => (s.kind === 'area' ? 0 : s.kind === 'station' ? 1 : 2)
+  return [...shapes].sort((a, b) => band(a) - band(b) || a.sortOrder - b.sortOrder)
+}
+
 /** Snap a value to the nearest grid multiple (grid <= 0 disables snapping). */
 export function snap(value: number, grid: number): number {
   return grid > 0 ? Math.round(value / grid) * grid : value
@@ -90,7 +135,10 @@ export function rollUp(shapes: FloorShape[], assignedByStationId?: Map<string, n
   const stations = shapes.filter((s) => s.kind === 'station')
 
   const perArea = new Map<string, AreaRollUp>(
-    areas.map((a) => [a.id, { areaId: a.id, label: a.label, color: a.color, headcount: 0, assigned: 0, stationCount: 0 }])
+    areas.map((a) => [
+      a.id,
+      { areaId: a.id, label: a.label, color: a.color, headcount: 0, assigned: 0, stationCount: 0 },
+    ])
   )
   const unassigned = { headcount: 0, assigned: 0, stationCount: 0 }
 

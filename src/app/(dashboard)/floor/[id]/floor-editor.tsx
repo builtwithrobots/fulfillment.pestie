@@ -1,6 +1,24 @@
 'use client'
 
-import { ArrowLeft, Copy, ImageUp, Lock, LockOpen, Minus, Plus, Square, Trash2, UserPlus, Users, X } from 'lucide-react'
+import {
+  ArrowLeft,
+  Copy,
+  ImageUp,
+  Lock,
+  LockOpen,
+  Minus,
+  MoveRight,
+  PersonStanding,
+  Plus,
+  Printer,
+  RotateCw,
+  Square,
+  Trash2,
+  Type,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 
@@ -22,19 +40,51 @@ import {
   uploadPlanImage,
 } from '@/lib/floor/actions'
 import type { PlanDetail, StationAssignment, StationOption, Worker } from '@/lib/floor/data'
-import { clamp, type FloorShape, rollUp, snap } from '@/lib/floor/geometry'
+import {
+  assignedNamesFor,
+  clamp,
+  DEFAULT_CANVAS_H,
+  DEFAULT_CANVAS_W,
+  type FloorShape,
+  groupAssignments,
+  isAnnotation,
+  normalizeDeg,
+  rollUp,
+  snap,
+  zOrdered,
+} from '@/lib/floor/geometry'
+import { ShapeVisual } from '@/lib/floor/shape-visual'
 import { useSupabaseBrowserClient } from '@/lib/supabase/client'
+import type { FloorShapeKind } from '@/lib/supabase/types'
 
 // Large virtual canvas so there's plenty of room to spread areas/stations out.
 // The canvas renders at least MIN_CANVAS_PX wide and scrolls inside a tall
 // viewport, so it's genuinely bigger both ways regardless of screen size.
-const DEFAULT_W = 2400
-const DEFAULT_H = 1500
 const MIN_CANVAS_PX = 2000
 const GRID = 8
 const MIN_SIZE = 40
+// Annotations (labels/arrows/figures) can shrink further than areas/stations.
+const MIN_ANNOTATION_SIZE = 24
 const AREA_COLOR = '#38bdf8'
 const STATION_COLOR = '#34d399'
+
+// Per-kind defaults for newly added shapes.
+const SHAPE_DEFAULTS: Record<FloorShapeKind, { w: number; h: number; color: string; label: string }> = {
+  area: { w: 280, h: 200, color: AREA_COLOR, label: 'New area' },
+  station: { w: 140, h: 90, color: STATION_COLOR, label: 'New station' },
+  label: { w: 220, h: 48, color: '#1e293b', label: 'Label' },
+  arrow: { w: 240, h: 56, color: '#f59e0b', label: '' },
+  figure: { w: 44, h: 88, color: '#6366f1', label: '' },
+}
+
+// Inspector copy per kind: the panel title and what the label field means.
+const KIND_COPY: Record<FloorShapeKind, { title: string; labelField: string }> = {
+  area: { title: 'Area', labelField: 'Label' },
+  station: { title: 'Station', labelField: 'Label' },
+  label: { title: 'Text label', labelField: 'Text' },
+  arrow: { title: 'Arrow', labelField: 'Caption (optional)' },
+  figure: { title: 'Person', labelField: 'Caption (optional)' },
+}
 
 // Zoom bounds for the +/- canvas-size control.
 const ZOOM_MIN = 0.4
@@ -42,11 +92,12 @@ const ZOOM_MAX = 2.5
 const ZOOM_STEP = 1.2
 
 type DragState = {
-  mode: 'move' | 'resize'
+  mode: 'move' | 'resize' | 'rotate'
   id: string
   startX: number
   startY: number
-  orig: { x: number; y: number; w: number; h: number }
+  orig: { x: number; y: number; w: number; h: number; rotation: number }
+  minSize: number
 } | null
 
 export function FloorEditor({
@@ -76,26 +127,17 @@ export function FloorEditor({
   const fileRef = useRef<HTMLInputElement>(null)
   const dragRef = useRef<DragState>(null)
 
-  const W = plan.imageWidth ?? DEFAULT_W
-  const H = plan.imageHeight ?? DEFAULT_H
+  const W = plan.imageWidth ?? DEFAULT_CANVAS_W
+  const H = plan.imageHeight ?? DEFAULT_CANVAS_H
   const selected = shapes.find((s) => s.id === selectedId) ?? null
 
   // Assignments grouped by real station id, for canvas names + the inspector.
-  const assignmentsByStation = useMemo(() => {
-    const map = new Map<string, StationAssignment[]>()
-    for (const a of assignments) {
-      const list = map.get(a.stationId) ?? []
-      list.push(a)
-      map.set(a.stationId, list)
-    }
-    return map
-  }, [assignments])
+  const assignmentsByStation = useMemo(() => groupAssignments(assignments), [assignments])
 
-  const assignedCountByStation = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const [sid, list] of assignmentsByStation) m.set(sid, list.length)
-    return m
-  }, [assignmentsByStation])
+  const assignedCountByStation = useMemo(
+    () => new Map([...assignmentsByStation].map(([sid, list]) => [sid, list.length])),
+    [assignmentsByStation]
+  )
 
   const totals = rollUp(shapes, assignedCountByStation)
 
@@ -138,10 +180,10 @@ export function FloorEditor({
     })
   }
 
-  // --- drag / resize ---------------------------------------------------------
-  function beginDrag(e: React.PointerEvent, shape: FloorShape, mode: 'move' | 'resize') {
+  // --- drag / resize / rotate ------------------------------------------------
+  function beginDrag(e: React.PointerEvent, shape: FloorShape, mode: 'move' | 'resize' | 'rotate') {
     e.stopPropagation()
-    // Locked shapes can be selected (to unlock) but never moved or resized.
+    // Locked shapes can be selected (to unlock) but never moved/resized/rotated.
     if (shape.locked) {
       setSelectedId(shape.id)
       return
@@ -154,7 +196,8 @@ export function FloorEditor({
       id: shape.id,
       startX: p.x,
       startY: p.y,
-      orig: { x: shape.x, y: shape.y, w: shape.w, h: shape.h },
+      orig: { x: shape.x, y: shape.y, w: shape.w, h: shape.h, rotation: shape.rotation },
+      minSize: isAnnotation(shape.kind) ? MIN_ANNOTATION_SIZE : MIN_SIZE,
     }
     svgRef.current?.setPointerCapture(e.pointerId)
   }
@@ -172,9 +215,27 @@ export function FloorEditor({
       const x = clamp(snap(orig.x + dx, GRID), 0, W - orig.w)
       const y = clamp(snap(orig.y + dy, GRID), 0, H - orig.h)
       patchLocal(drag.id, { x, y })
+    } else if (drag.mode === 'rotate') {
+      // Delta-based: how far the pointer swung around the center since the
+      // grab, added to the starting rotation. No jump on grab, and it works
+      // wherever the handle is (it flips below shapes near the canvas top).
+      // Snapped to 5° for tidy diagrams.
+      const ccx = orig.x + orig.w / 2
+      const ccy = orig.y + orig.h / 2
+      const swung = Math.atan2(p.y - ccy, p.x - ccx) - Math.atan2(drag.startY - ccy, drag.startX - ccx)
+      patchLocal(drag.id, { rotation: normalizeDeg(snap(orig.rotation + (swung * 180) / Math.PI, 5)) })
     } else {
-      const w = clamp(snap(orig.w + dx, GRID), MIN_SIZE, W - orig.x)
-      const h = clamp(snap(orig.h + dy, GRID), MIN_SIZE, H - orig.y)
+      // The resize handle lives inside the rotated group, so convert the screen
+      // delta into the shape's local (unrotated) frame before applying it.
+      let dxl = dx
+      let dyl = dy
+      if (orig.rotation) {
+        const rad = (orig.rotation * Math.PI) / 180
+        dxl = dx * Math.cos(rad) + dy * Math.sin(rad)
+        dyl = -dx * Math.sin(rad) + dy * Math.cos(rad)
+      }
+      const w = clamp(snap(orig.w + dxl, GRID), drag.minSize, W - orig.x)
+      const h = clamp(snap(orig.h + dyl, GRID), drag.minSize, H - orig.y)
       patchLocal(drag.id, { w, h })
     }
   }
@@ -185,18 +246,15 @@ export function FloorEditor({
     svgRef.current?.releasePointerCapture(e.pointerId)
     dragRef.current = null
     const s = shapes.find((sh) => sh.id === drag.id)
-    if (s) persist(s.id, { x: s.x, y: s.y, w: s.w, h: s.h })
+    if (s) persist(s.id, { x: s.x, y: s.y, w: s.w, h: s.h, rotation: s.rotation })
   }
 
   // --- toolbar actions -------------------------------------------------------
-  function addShape(kind: 'area' | 'station') {
+  function addShape(kind: FloorShapeKind) {
     const offset = (shapes.length % 6) * GRID * 2
-    const w = kind === 'area' ? 280 : 140
-    const h = kind === 'area' ? 200 : 90
+    const { w, h, color, label } = SHAPE_DEFAULTS[kind]
     const x = clamp(snap(W / 2 - w / 2 + offset, GRID), 0, W - w)
     const y = clamp(snap(H / 2 - h / 2 + offset, GRID), 0, H - h)
-    const color = kind === 'area' ? AREA_COLOR : STATION_COLOR
-    const label = kind === 'area' ? 'New area' : 'New station'
 
     startTransition(async () => {
       const res = await createShape(plan.id, { kind, shape: 'rect', x, y, w, h, label, color })
@@ -247,6 +305,7 @@ export function FloorEditor({
         y,
         w: src.w,
         h: src.h,
+        rotation: src.rotation,
         label: src.label,
         color: src.color,
         plannedHeadcount: src.plannedHeadcount,
@@ -332,8 +391,7 @@ export function FloorEditor({
     })
   }
 
-  const areas = shapes.filter((s) => s.kind === 'area')
-  const stationShapes = shapes.filter((s) => s.kind === 'station')
+  const ordered = zOrdered(shapes)
 
   return (
     <div className="mx-auto max-w-none">
@@ -349,7 +407,7 @@ export function FloorEditor({
               {plan.isActive && <Badge color="green">Active</Badge>}
             </div>
             <p className="text-sm text-zinc-500">
-              Drag to move, drag the corner to resize, lock to pin in place.
+              Drag to move, drag the corner to resize, drag the top handle to rotate, lock to pin in place.
             </p>
           </div>
         </div>
@@ -363,6 +421,9 @@ export function FloorEditor({
           <Button outline onClick={() => fileRef.current?.click()} disabled={uploading}>
             <ImageUp className="size-4" /> {uploading ? 'Uploading…' : plan.imageUrl ? 'Replace image' : 'Upload image'}
           </Button>
+          <Button outline href={`/floor/${plan.id}/print`} target="_blank">
+            <Printer className="size-4" /> Export PDF
+          </Button>
         </div>
       </div>
 
@@ -370,12 +431,21 @@ export function FloorEditor({
         {/* Canvas */}
         <div className="min-w-0">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button color="sky" onClick={() => addShape('area')}>
                 <Square className="size-4" /> Add area
               </Button>
               <Button color="emerald" onClick={() => addShape('station')}>
                 <Users className="size-4" /> Add station
+              </Button>
+              <Button outline onClick={() => addShape('label')} title="Add a text label">
+                <Type className="size-4" /> Label
+              </Button>
+              <Button outline onClick={() => addShape('arrow')} title="Add a workflow arrow">
+                <MoveRight className="size-4" /> Arrow
+              </Button>
+              <Button outline onClick={() => addShape('figure')} title="Add a person silhouette">
+                <PersonStanding className="size-4" /> Person
               </Button>
             </div>
             {/* Grid size / zoom -- purely visual, for easier viewing on any device. */}
@@ -437,26 +507,15 @@ export function FloorEditor({
                 </>
               )}
 
-              {/* Areas render below stations so stations stay clickable. */}
-              {areas.map((s) => (
+              {/* zOrdered: areas under stations (so stations stay clickable),
+                  annotations on top so arrows/labels overlay both. */}
+              {ordered.map((s) => (
                 <ShapeNode
                   key={s.id}
                   shape={s}
                   selected={s.id === selectedId}
-                  onDown={(e) => beginDrag(e, s, 'move')}
-                  onResize={(e) => beginDrag(e, s, 'resize')}
-                />
-              ))}
-              {stationShapes.map((s) => (
-                <ShapeNode
-                  key={s.id}
-                  shape={s}
-                  selected={s.id === selectedId}
-                  assignedNames={
-                    s.stationId ? (assignmentsByStation.get(s.stationId) ?? []).map((a) => a.fullName) : null
-                  }
-                  onDown={(e) => beginDrag(e, s, 'move')}
-                  onResize={(e) => beginDrag(e, s, 'resize')}
+                  assignedNames={assignedNamesFor(s, assignmentsByStation)}
+                  onBegin={(e, mode) => beginDrag(e, s, mode)}
                 />
               ))}
             </svg>
@@ -487,7 +546,7 @@ export function FloorEditor({
             />
           ) : (
             <div className="rounded-xl bg-white p-5 text-sm text-zinc-500 ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
-              Select a shape to edit it, or add an area/station to get started.
+              Select a shape to edit it, or add an area, station, label, arrow, or person to get started.
             </div>
           )}
 
@@ -499,98 +558,37 @@ export function FloorEditor({
 }
 
 // ---------------------------------------------------------------------------
-// SVG shape
+// SVG shape -- shared visuals (ShapeVisual) plus editor-only overlays. The
+// overlays render inside ShapeVisual's rotated group so they track rotation.
 // ---------------------------------------------------------------------------
 function ShapeNode({
   shape,
   selected,
   assignedNames,
-  onDown,
-  onResize,
+  onBegin,
 }: {
   shape: FloorShape
   selected: boolean
   // null => not a linked station (show planned only); [] => linked, nobody yet.
   assignedNames?: string[] | null
-  onDown: (e: React.PointerEvent) => void
-  onResize: (e: React.PointerEvent) => void
+  onBegin: (e: React.PointerEvent, mode: 'move' | 'resize' | 'rotate') => void
 }) {
-  const isArea = shape.kind === 'area'
   const cx = shape.x + shape.w / 2
-  const cy = shape.y + shape.h / 2
-
-  // Station name layout: how many first names fit stacked below the count line.
-  const firstNames = (assignedNames ?? []).map((n) => n.split(' ')[0] || n)
-  const capacity = Math.max(0, Math.floor((shape.h - 52) / 16))
-  const showAll = firstNames.length <= capacity
-  const shownNames = showAll ? firstNames : firstNames.slice(0, Math.max(0, capacity - 1))
-  const overflow = firstNames.length - shownNames.length
-  const countText =
-    assignedNames == null
-      ? `${shape.plannedHeadcount} planned`
-      : `${assignedNames.length} / ${shape.plannedHeadcount} staffed`
+  const rotatable = isAnnotation(shape.kind)
+  // Rotate handle flips below the shape near the canvas top so it never clips
+  // out of reach (rotation is delta-based, so the grab point doesn't matter).
+  const flip = shape.y < 44
+  const stemStart = flip ? shape.y + shape.h + 3 : shape.y - 3
+  const stemEnd = flip ? shape.y + shape.h + 22 : shape.y - 22
+  const knobY = flip ? shape.y + shape.h + 30 : shape.y - 30
 
   return (
-    <g className={shape.locked ? 'cursor-default' : 'cursor-move'} onPointerDown={onDown}>
-      {shape.shape === 'circle' ? (
-        <ellipse
-          cx={cx}
-          cy={cy}
-          rx={shape.w / 2}
-          ry={shape.h / 2}
-          fill={shape.color}
-          fillOpacity={isArea ? 0.12 : 0.85}
-          stroke={shape.color}
-          strokeWidth={2}
-          strokeDasharray={isArea ? '8 6' : undefined}
-        />
-      ) : (
-        <rect
-          x={shape.x}
-          y={shape.y}
-          width={shape.w}
-          height={shape.h}
-          rx={isArea ? 10 : 8}
-          fill={shape.color}
-          fillOpacity={isArea ? 0.12 : 0.85}
-          stroke={shape.color}
-          strokeWidth={2}
-          strokeDasharray={isArea ? '8 6' : undefined}
-        />
-      )}
-
-      {/* Label */}
-      {isArea ? (
-        <text x={shape.x + 10} y={shape.y + 22} className="fill-zinc-700 dark:fill-zinc-200" fontSize={16} fontWeight={600}>
-          {shape.label}
-        </text>
-      ) : (
-        <g style={{ pointerEvents: 'none' }}>
-          <text x={cx} y={shape.y + 22} textAnchor="middle" className="fill-white" fontSize={15} fontWeight={600}>
-            {shape.label}
-          </text>
-          <text x={cx} y={shape.y + 40} textAnchor="middle" className="fill-white/90" fontSize={13}>
-            {countText}
-          </text>
-          {shownNames.map((n, i) => (
-            <text key={i} x={cx} y={shape.y + 58 + i * 16} textAnchor="middle" className="fill-white/95" fontSize={13}>
-              {n}
-            </text>
-          ))}
-          {overflow > 0 && (
-            <text
-              x={cx}
-              y={shape.y + 58 + shownNames.length * 16}
-              textAnchor="middle"
-              className="fill-white/70"
-              fontSize={12}
-            >
-              +{overflow} more
-            </text>
-          )}
-        </g>
-      )}
-
+    <ShapeVisual
+      shape={shape}
+      assignedNames={assignedNames}
+      className={shape.locked ? 'cursor-default' : 'cursor-move'}
+      onPointerDown={(e) => onBegin(e, 'move')}
+    >
       {/* Selection outline (always when selected) */}
       {selected && (
         <rect
@@ -614,18 +612,18 @@ function ShapeNode({
           rx={3}
           fill="#3b82f6"
           className="cursor-nwse-resize"
-          onPointerDown={onResize}
+          onPointerDown={(e) => onBegin(e, 'resize')}
         />
       )}
-      {/* Lock badge -- a small padlock in the top-right of locked shapes */}
-      {shape.locked && (
-        <g style={{ pointerEvents: 'none' }} transform={`translate(${shape.x + shape.w - 20}, ${shape.y + 6})`}>
-          <rect width={14} height={14} rx={7} fill="#000" fillOpacity={0.45} />
-          <rect x={4.5} y={6.5} width={5} height={4.5} rx={1} fill="#fff" />
-          <path d="M5.2 6.5 v-1.1 a1.8 1.8 0 0 1 3.6 0 v1.1" fill="none" stroke="#fff" strokeWidth={1} />
+      {/* Rotate handle -- annotations only, a stemmed knob off the top edge */}
+      {selected && !shape.locked && rotatable && (
+        <g className="cursor-grab" onPointerDown={(e) => onBegin(e, 'rotate')}>
+          <line x1={cx} y1={stemStart} x2={cx} y2={stemEnd} stroke="#3b82f6" strokeWidth={2} />
+          <circle cx={cx} cy={knobY} r={8} fill="#3b82f6" />
+          <circle cx={cx} cy={knobY} r={3} fill="#fff" />
         </g>
       )}
-    </g>
+    </ShapeVisual>
   )
 }
 
@@ -657,11 +655,13 @@ function ShapeInspector({
   onCreateAndAssign: (fullName: string) => void
   onUnassign: (workerId: string) => void
 }) {
+  const rotatable = isAnnotation(shape.kind)
+
   return (
     <div className="space-y-4 rounded-xl bg-white p-5 ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">
-          {shape.kind === 'area' ? 'Area' : 'Station'}
+          {KIND_COPY[shape.kind].title}
         </span>
         <div className="flex items-center gap-1">
           <Button
@@ -694,7 +694,7 @@ function ShapeInspector({
       )}
 
       <Field>
-        <Label>Label</Label>
+        <Label>{KIND_COPY[shape.kind].labelField}</Label>
         <Input
           value={shape.label}
           maxLength={60}
@@ -715,24 +715,55 @@ function ShapeInspector({
         />
       </Field>
 
-      <Field>
-        <Label>Shape</Label>
-        <div className="flex gap-2">
-          {(['rect', 'circle'] as const).map((g) => (
+      {!rotatable && (
+        <Field>
+          <Label>Shape</Label>
+          <div className="flex gap-2">
+            {(['rect', 'circle'] as const).map((g) => (
+              <Button
+                key={g}
+                {...(shape.shape === g ? { color: 'blue' as const } : { outline: true })}
+                onClick={() => {
+                  onChange({ shape: g })
+                  onCommit({ shape: g })
+                }}
+                className="flex-1 justify-center"
+              >
+                {g === 'rect' ? 'Rectangle' : 'Circle'}
+              </Button>
+            ))}
+          </div>
+        </Field>
+      )}
+
+      {rotatable && (
+        <Field>
+          <Label>Rotation (°)</Label>
+          <div className="flex gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={359}
+              value={String(Math.round(shape.rotation))}
+              onChange={(e) => onChange({ rotation: normalizeDeg(Math.round(Number(e.target.value) || 0)) })}
+              onBlur={(e) => onCommit({ rotation: normalizeDeg(Math.round(Number(e.target.value) || 0)) })}
+              className="flex-1"
+            />
             <Button
-              key={g}
-              {...(shape.shape === g ? { color: 'blue' as const } : { outline: true })}
+              plain
               onClick={() => {
-                onChange({ shape: g })
-                onCommit({ shape: g })
+                const rotation = normalizeDeg(Math.round(shape.rotation / 90) * 90 + 90)
+                onChange({ rotation })
+                onCommit({ rotation })
               }}
-              className="flex-1 justify-center"
+              aria-label="Rotate 90 degrees"
+              title="Rotate 90°"
             >
-              {g === 'rect' ? 'Rectangle' : 'Circle'}
+              <RotateCw className="size-4" />
             </Button>
-          ))}
-        </div>
-      </Field>
+          </div>
+        </Field>
+      )}
 
       {shape.kind === 'station' && (
         <>
@@ -762,9 +793,7 @@ function ShapeInspector({
               min={0}
               value={String(shape.plannedHeadcount)}
               onChange={(e) => onChange({ plannedHeadcount: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
-              onBlur={(e) =>
-                onCommit({ plannedHeadcount: Math.max(0, Math.floor(Number(e.target.value) || 0)) })
-              }
+              onBlur={(e) => onCommit({ plannedHeadcount: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
             />
           </Field>
 
@@ -924,7 +953,9 @@ function RollUpPanel({
     <div className="rounded-xl bg-white p-5 ring-1 ring-zinc-950/5 dark:bg-zinc-900 dark:ring-white/10">
       <div className="text-xs font-semibold tracking-wider text-zinc-500 uppercase">Labor coverage</div>
       <div className="mt-3 flex items-baseline gap-2">
-        <span className={`text-3xl font-semibold tabular-nums ${coverageClass(totals.totalAssigned, totals.totalHeadcount)}`}>
+        <span
+          className={`text-3xl font-semibold tabular-nums ${coverageClass(totals.totalAssigned, totals.totalHeadcount)}`}
+        >
           {totals.totalAssigned} / {totals.totalHeadcount}
         </span>
         <span className="text-sm text-zinc-500">

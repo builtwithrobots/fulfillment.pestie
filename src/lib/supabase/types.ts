@@ -9,7 +9,7 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type AppRole = 'director' | 'supervisor' | 'floor_lead' | 'executive'
 
-export type FloorShapeKind = 'area' | 'station'
+export type FloorShapeKind = 'area' | 'station' | 'label' | 'arrow' | 'figure'
 export type FloorShapeGeometry = 'rect' | 'circle'
 
 type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {

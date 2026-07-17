@@ -2,10 +2,10 @@
 
 import { revalidatePath } from 'next/cache'
 
-import type { AppRole, FloorShapeGeometry, FloorShapeKind } from '@/lib/supabase/types'
 import { listAssignments, type StationAssignment } from '@/lib/floor/data'
-import { createServiceRoleClient } from '@/lib/supabase/server'
 import { requireUserId } from '@/lib/studies/data'
+import { createServiceRoleClient } from '@/lib/supabase/server'
+import type { AppRole, FloorShapeGeometry, FloorShapeKind } from '@/lib/supabase/types'
 import { assertRole } from '@/lib/users/data'
 
 /**
@@ -22,8 +22,7 @@ const IMAGE_BUCKET = 'floor-plans'
 const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 export type ActionResult<T = undefined> =
-  | ({ ok: true } & (T extends undefined ? object : { data: T }))
-  | { ok: false; error: string }
+  ({ ok: true } & (T extends undefined ? object : { data: T })) | { ok: false; error: string }
 
 // Validate the session + require at least `min`. Returns an error string to
 // short-circuit on, or null when the caller is allowed.
@@ -39,6 +38,7 @@ export type ShapeInput = {
   y: number
   w: number
   h: number
+  rotation?: number
   label?: string
   color?: string
   stationId?: string | null
@@ -219,6 +219,7 @@ export async function createShape(planId: string, input: ShapeInput): Promise<Ac
       y: input.y,
       w: input.w,
       h: input.h,
+      rotation: input.rotation ?? 0,
       label: input.label ?? '',
       color: input.color ?? '#34d399',
       station_id: input.stationId ?? null,
