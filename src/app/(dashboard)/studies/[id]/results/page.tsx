@@ -17,6 +17,37 @@ function money(v: number, wage: number) {
   return wage > 0 ? `$${v.toFixed(4)}` : '—'
 }
 
+// Full-run consistency bands, keyed on coefficient of variation (std dev ÷
+// average) so they hold for any process length. Same 10% / 25% thresholds as
+// the per-step Consistency column, mapped to a suggested action.
+const CONSISTENCY_BANDS = [
+  {
+    max: 10,
+    range: '≤ 10%',
+    label: 'Expected',
+    pill: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+    consider: 'No action — full runs are tight and consistent.',
+  },
+  {
+    max: 25,
+    range: '10–25%',
+    label: 'Watch for trends',
+    pill: 'bg-amber-400/15 text-amber-700 dark:text-amber-400',
+    consider: 'Some run-to-run variation — keep sampling and watch for drift or a creeping average.',
+  },
+  {
+    max: Infinity,
+    range: '> 25%',
+    label: 'Action needed',
+    pill: 'bg-red-500/15 text-red-700 dark:text-red-400',
+    consider: 'Unstable run to run — check for method differences, interruptions, or mixed operators before trusting the average.',
+  },
+] as const
+
+function bandFor(cvPct: number) {
+  return CONSISTENCY_BANDS.find((b) => cvPct <= b.max) ?? CONSISTENCY_BANDS[2]
+}
+
 export default async function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [data, workerNames] = await Promise.all([getStudyWithObservations(id), workerNameMap()])
@@ -39,6 +70,8 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
   const totalRecordings = r.totalObs + (r.master?.runs.length ?? 0)
   const hasAllowance = r.allowancePct > 0
   const stdCycleMs = chartSteps.length > 0 ? r.totalStdMs : (r.master?.stdMs ?? 0)
+  // Consistency band for the full runs — only meaningful with ≥2 runs.
+  const masterBand = r.master && r.master.runs.length >= 2 ? bandFor(r.master.cvPct) : null
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -109,9 +142,45 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
             <Stat
               label="Std dev"
               value={fmtMs(r.master.stdDevMs)}
+              badge={
+                masterBand ? (
+                  <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${masterBand.pill}`}>
+                    {masterBand.label}
+                  </span>
+                ) : (
+                  <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400">
+                    ≥2 runs to assess
+                  </span>
+                )
+              }
               info={
-                'How much the full runs vary around their average (sample standard deviation, N-1). Lower means ' +
-                'steadier; a large value means the total process time swings from run to run.'
+                <div className="space-y-3">
+                  <p>
+                    How much the full runs vary around their average (sample standard deviation, N-1). Judge it against
+                    the average as a coefficient of variation — CV = std dev ÷ average
+                    {r.master.runs.length >= 2 ? (
+                      <>
+                        . This set: <span className="font-medium">{r.master.cvPct.toFixed(0)}% CV</span>.
+                      </>
+                    ) : (
+                      <> (needs at least two runs to assess).</>
+                    )}
+                  </p>
+                  <ul className="space-y-2">
+                    {CONSISTENCY_BANDS.map((b) => (
+                      <li key={b.range} className="flex items-start gap-2">
+                        <span
+                          className={`mt-0.5 inline-block w-14 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-semibold ${b.pill}`}
+                        >
+                          {b.range}
+                        </span>
+                        <span>
+                          <span className="font-medium text-zinc-950 dark:text-white">{b.label}</span> — {b.consider}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               }
             />
           </div>

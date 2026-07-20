@@ -38,11 +38,14 @@ export function Stat({
   value,
   tone,
   info,
+  badge,
 }: {
   label: string
   value: string
   tone?: string
   info?: React.ReactNode
+  /** Optional status pill rendered under the label (e.g. a consistency band). */
+  badge?: React.ReactNode
 }) {
   return (
     <div className="relative rounded-lg bg-zinc-50 p-4 text-center ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10">
@@ -57,6 +60,7 @@ export function Stat({
         {value}
       </div>
       <div className="mt-1 text-[11px] tracking-wide text-zinc-500 uppercase">{label}</div>
+      {badge && <div className="mt-1.5">{badge}</div>}
     </div>
   )
 }
