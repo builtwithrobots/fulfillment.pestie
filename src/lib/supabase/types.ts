@@ -64,6 +64,7 @@ export type Database = {
         notes: string | null
         timed: boolean
         position: number
+        pieces_per_cycle: number
         created_at: string
       }>
       observations: Table<{

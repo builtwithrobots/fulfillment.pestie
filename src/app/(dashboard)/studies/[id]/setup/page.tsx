@@ -18,7 +18,13 @@ export default async function EditStudyPage({ params }: { params: Promise<{ id: 
         wageRate: study.wageRate,
         allowancePct: study.allowancePct,
         useWholeTimer: study.useWholeTimer,
-        steps: study.steps.map((s) => ({ id: s.id, name: s.name, notes: s.notes, timed: s.timed })),
+        steps: study.steps.map((s) => ({
+          id: s.id,
+          name: s.name,
+          notes: s.notes,
+          timed: s.timed,
+          piecesPerCycle: s.piecesPerCycle,
+        })),
       }}
     />
   )

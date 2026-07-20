@@ -51,6 +51,7 @@ export type StudyDetail = {
     notes: string | null
     timed: boolean
     position: number
+    piecesPerCycle: number
   }[]
 }
 
@@ -104,7 +105,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
 
   const { data: steps, error: stepsError } = await supabase
     .from('steps')
-    .select('id, name, notes, timed, position')
+    .select('id, name, notes, timed, position, pieces_per_cycle')
     .eq('study_id', studyId)
     .order('position', { ascending: true })
   if (stepsError) throw stepsError
@@ -123,6 +124,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
       notes: s.notes,
       timed: s.timed,
       position: s.position,
+      piecesPerCycle: s.pieces_per_cycle,
     })),
   }
 }
@@ -170,6 +172,7 @@ export async function getStudyWithObservations(studyId: string): Promise<{
     notes: s.notes,
     timed: s.timed,
     position: s.position,
+    piecesPerCycle: s.piecesPerCycle,
     observations: byStep.get(s.id) ?? [],
   }))
 
