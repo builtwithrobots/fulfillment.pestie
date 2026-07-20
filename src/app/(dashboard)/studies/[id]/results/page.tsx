@@ -1,4 +1,4 @@
-import { Plus, Printer } from 'lucide-react'
+import { Plus, Printer, StickyNote } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
@@ -7,6 +7,7 @@ import { Heading } from '@/components/heading'
 import { workerNameMap } from '@/lib/roster/data'
 import { getStudyWithObservations } from '@/lib/studies/data'
 import { computePerWorker, computeResults, fmtMs, resultsToPlainText } from '@/lib/time-study'
+import { InfoModal } from '../../info-modal'
 import { Card, CardTitle, Stat } from '../../ui'
 import { CopyResultsButton } from './copy-button'
 
@@ -24,9 +25,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
   const { study, steps, masterRuns } = data
   const wage = study.wageRate
   const allowance = study.allowancePct
-  const r = computeResults(steps, wage, study.useWholeTimer ? masterRuns : [], allowance)
-  const copyText = resultsToPlainText(study.title, wage, steps, study.useWholeTimer ? masterRuns : [], allowance)
-  const perWorker = computePerWorker(steps, study.useWholeTimer ? masterRuns : [])
+  const r = computeResults(steps, wage, masterRuns, allowance)
+  const copyText = resultsToPlainText(study.title, wage, steps, masterRuns, allowance)
+  const perWorker = computePerWorker(steps, masterRuns)
 
   const chartSteps = r.steps.filter((s) => s.timed && s.obsCount > 0)
   const maxAvg = Math.max(0, ...chartSteps.map((s) => s.avgMs))
@@ -53,18 +54,27 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
           label={hasAllowance ? 'Observed cycle' : 'Avg cycle time'}
           value={cycleMs > 0 ? fmtMs(cycleMs) : '—'}
           tone="text-blue-600 dark:text-blue-400"
+          info={
+            "The time for one unit to pass through every timed step: each step's readings are averaged, then added " +
+            'together. This is the observed time, before any PF&D allowance.'
+          }
         />
         {hasAllowance && (
           <Stat
             label="Standard / unit"
             value={stdCycleMs > 0 ? fmtMs(stdCycleMs) : '—'}
             tone="text-violet-600 dark:text-violet-400"
+            info={`Observed cycle time with your PF&D allowance applied — observed × (1 + ${r.allowancePct}%). This is the time you actually staff and cost to.`}
           />
         )}
         <Stat
           label={hasAllowance ? 'Cost / unit (std)' : 'Labor cost / unit'}
           value={wage > 0 && cycleMs > 0 ? money(cycleCost, wage) : '—'}
           tone="text-emerald-600 dark:text-emerald-400"
+          info={
+            "The labor cost to make one unit: the cycle's standard time × your hourly wage. It includes the PF&D " +
+            'allowance if you set one, and stays blank until you enter a wage rate.'
+          }
         />
         <Stat label="Total observations" value={String(totalRecordings)} />
       </div>
@@ -79,7 +89,15 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
         <Card className="mt-4">
           <CardTitle className="text-violet-600 dark:text-violet-400">Master timer — full process runs</CardTitle>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Stat label="Avg full run" value={fmtMs(r.master.avgMs)} tone="text-violet-600 dark:text-violet-400" />
+            <Stat
+              label="Avg full run"
+              value={fmtMs(r.master.avgMs)}
+              tone="text-violet-600 dark:text-violet-400"
+              info={
+                'The average of the whole-process runs — the master timer in per-step mode, plus any completed cycles ' +
+                'in cycle mode. It measures the whole job start to finish, separate from the per-step splits.'
+              }
+            />
             <Stat
               label="Avg labor cost"
               value={money(r.master.avgCost, wage)}
@@ -88,7 +106,14 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
             <Stat label="Full runs" value={String(r.master.runs.length)} />
             <Stat label="Fastest" value={fmtMs(r.master.minMs)} tone="text-emerald-600 dark:text-emerald-400" />
             <Stat label="Slowest" value={fmtMs(r.master.maxMs)} tone="text-amber-600 dark:text-amber-400" />
-            <Stat label="Std dev" value={fmtMs(r.master.stdDevMs)} />
+            <Stat
+              label="Std dev"
+              value={fmtMs(r.master.stdDevMs)}
+              info={
+                'How much the full runs vary around their average (sample standard deviation, N-1). Lower means ' +
+                'steadier; a large value means the total process time swings from run to run.'
+              }
+            />
           </div>
           <ul className="mt-3 space-y-1.5">
             {r.master.runs.map((ms, i) => {
@@ -169,7 +194,16 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                       <span className="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-500 uppercase not-italic dark:bg-white/5">
                         Documented
                       </span>
-                      {s.notes && <div className="mt-0.5 text-xs text-zinc-400 not-italic">{s.notes}</div>}
+                      {s.notes && (
+                        <InfoModal
+                          title={`Notes — ${s.name}`}
+                          triggerLabel={`View notes for ${s.name}`}
+                          icon={<StickyNote className="size-3.5" />}
+                          triggerClassName="ml-1.5 inline-flex align-middle text-zinc-400 not-italic hover:text-blue-600 dark:hover:text-blue-400"
+                        >
+                          {s.notes}
+                        </InfoModal>
+                      )}
                     </td>
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5 pr-3">—</td>
@@ -182,7 +216,19 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
               if (s.obsCount === 0) {
                 return (
                   <tr key={s.id} className="border-b border-zinc-950/5 dark:border-white/5">
-                    <td className="py-2.5 pr-3 font-medium">{s.name}</td>
+                    <td className="py-2.5 pr-3 font-medium">
+                      {s.name}
+                      {s.notes && (
+                        <InfoModal
+                          title={`Notes — ${s.name}`}
+                          triggerLabel={`View notes for ${s.name}`}
+                          icon={<StickyNote className="size-3.5" />}
+                          triggerClassName="ml-1.5 inline-flex align-middle text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400"
+                        >
+                          {s.notes}
+                        </InfoModal>
+                      )}
+                    </td>
                     <td className="py-2.5 pr-3 text-zinc-400">No obs</td>
                     <td className="py-2.5 pr-3 text-zinc-400">—</td>
                     <td className="py-2.5 pr-3">0</td>
@@ -199,6 +245,16 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                       <span className="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 uppercase dark:text-amber-400">
                         Bottleneck
                       </span>
+                    )}
+                    {s.notes && (
+                      <InfoModal
+                        title={`Notes — ${s.name}`}
+                        triggerLabel={`View notes for ${s.name}`}
+                        icon={<StickyNote className="size-3.5" />}
+                        triggerClassName="ml-1.5 inline-flex align-middle text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400"
+                      >
+                        {s.notes}
+                      </InfoModal>
                     )}
                   </td>
                   <td className="py-2.5 pr-3 font-mono tabular-nums">{fmtMs(s.avgMs)}</td>

@@ -45,7 +45,8 @@ export function StudyHelp() {
             <p className="mt-1.5">
               Timing a multi-step process as one flow? Switch to <em>Cycle</em> mode and tap through the steps in order
               — each split is saved to that step&apos;s assigned person, so you get real per-step times and per-person
-              roster stats from a single continuous run.
+              roster stats from a single continuous run. The whole pass is also saved as one full-process run, so
+              completed cycles roll into the master-timer stats.
             </p>
           </section>
 

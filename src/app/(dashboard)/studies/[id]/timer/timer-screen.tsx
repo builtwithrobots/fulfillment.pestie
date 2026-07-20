@@ -73,6 +73,9 @@ export function TimerScreen({
   // assigned person. cycleIdx is the position among timed steps, or null idle.
   const [mode, setMode] = useState<'step' | 'cycle'>('step')
   const [cycleIdx, setCycleIdx] = useState<number | null>(null)
+  // When the current cycle began, so a completed cycle can be saved as one
+  // continuous full-process run alongside the master-timer runs.
+  const [cycleStartTs, setCycleStartTs] = useState<number | null>(null)
   const [cycleCount, setCycleCount] = useState(0)
   const [now, setNow] = useState(() => nowMs())
   const [toast, setToast] = useState<string | null>(null)
@@ -161,6 +164,7 @@ export function TimerScreen({
     // Discard any in-progress (unsaved) running timer when switching modes.
     setSteps((prev) => prev.map((s) => ({ ...s, startTs: null })))
     setCycleIdx(null)
+    setCycleStartTs(null)
     setMode(next)
   }
 
@@ -170,6 +174,7 @@ export function TimerScreen({
     const start = nowMs()
     setNow(start)
     setCycleIdx(0)
+    setCycleStartTs(start)
     setSteps((prev) => prev.map((s) => ({ ...s, startTs: s.id === timed[0].id ? start : null })))
   }
 
@@ -194,16 +199,42 @@ export function TimerScreen({
         })
       )
     } else {
+      // Cycle complete: also save the whole continuous pass as one full-process
+      // run so it joins the master-run stats (avg / fastest / slowest / std dev).
+      const total = cycleStartTs !== null ? nowMs() - cycleStartTs : 0
       setCycleIdx(null)
+      setCycleStartTs(null)
       setCycleCount((c) => c + 1)
       setSteps((prev) => prev.map((s) => (s.id === current.id ? { ...s, startTs: null } : s)))
-      showToast(`Cycle recorded — ${timed.length} step${timed.length !== 1 ? 's' : ''}.`)
+
+      const stepsLabel = `${timed.length} step${timed.length !== 1 ? 's' : ''}`
+      if (total > 0) {
+        const run: Observation = { durationMs: total, workerId }
+        setMaster((m) => ({ ...m, runs: [...m.runs, run] }))
+        recordMasterRun(studyId, total, workerId)
+          .then((res) => {
+            if (res.ok) {
+              setMaster((m) => ({ ...m, runs: m.runs.map((r) => (r === run ? { ...r, id: res.data.id } : r)) }))
+              showToast(`Cycle recorded — ${stepsLabel} + full run ${fmtMs(total)}.`)
+            } else {
+              setMaster((m) => ({ ...m, runs: m.runs.filter((r) => r !== run) }))
+              showToast(`Cycle steps saved; full run didn't: ${res.error}`)
+            }
+          })
+          .catch(() => {
+            setMaster((m) => ({ ...m, runs: m.runs.filter((r) => r !== run) }))
+            showToast('Cycle steps saved; full run didn’t: network error.')
+          })
+      } else {
+        showToast(`Cycle recorded — ${stepsLabel}.`)
+      }
     }
   }
 
   function cancelCycle() {
     setSteps((prev) => prev.map((s) => ({ ...s, startTs: null })))
     setCycleIdx(null)
+    setCycleStartTs(null)
   }
 
   // ── Master timer ─────────────────────────────────────────────
@@ -466,6 +497,20 @@ export function TimerScreen({
                 Tap through the {timedSteps.length} steps in order — each split saves to that step’s assigned person.
                 Assign people per step below.
               </p>
+            </div>
+          )}
+          {master.runs.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-950/5 pt-3 dark:border-white/5">
+              <span className="text-xs text-zinc-500">FULL RUNS:</span>
+              {master.runs.map((r, i) => (
+                <span
+                  key={r.id ?? i}
+                  title={workerName(r.workerId) ?? undefined}
+                  className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-xs text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-300"
+                >
+                  R{i + 1}: {fmtMs(r.durationMs)}
+                </span>
+              ))}
             </div>
           )}
         </Card>
