@@ -36,7 +36,7 @@ export function PrintView({
   workerNames: Record<string, string>
 }) {
   const wage = study.wageRate
-  const r = computeResults(steps, wage, masterRuns)
+  const r = computeResults(steps, wage, masterRuns, study.allowancePct)
   const perWorker = computePerWorker(steps, masterRuns)
   const nameOf = (id: string | null) => (id ? (workerNames[id] ?? 'Removed employee') : null)
 
@@ -45,6 +45,15 @@ export function PrintView({
   const cycleMs = r.totalMs > 0 ? r.totalMs : (r.master?.avgMs ?? 0)
   const cycleCost = r.totalMs > 0 ? r.totalCost : (r.master?.avgCost ?? 0)
   const totalRecordings = r.totalObs + (r.master?.runs.length ?? 0)
+  const hasAllowance = r.allowancePct > 0
+  const stdCycleMs = r.totalMs > 0 ? r.totalStdMs : (r.master?.stdMs ?? 0)
+
+  const kpis = [
+    { label: hasAllowance ? 'Observed cycle' : 'Avg cycle time', value: cycleMs > 0 ? fmtMs(cycleMs) : '—' },
+    ...(hasAllowance ? [{ label: 'Standard / unit', value: stdCycleMs > 0 ? fmtMs(stdCycleMs) : '—' }] : []),
+    { label: hasAllowance ? 'Cost / unit (std)' : 'Labor cost / unit', value: cycleMs > 0 ? money(cycleCost, wage) : '—' },
+    { label: 'Total observations', value: String(totalRecordings) },
+  ]
 
   // Per-step spread, straight from the raw observations.
   const spread = new Map(
@@ -90,18 +99,19 @@ export function PrintView({
         </p>
 
         {/* KPIs */}
-        <div className="mt-5 grid grid-cols-3 gap-3 text-center">
-          {[
-            { label: 'Avg cycle time', value: cycleMs > 0 ? fmtMs(cycleMs) : '—' },
-            { label: 'Labor cost / unit', value: cycleMs > 0 ? money(cycleCost, wage) : '—' },
-            { label: 'Total observations', value: String(totalRecordings) },
-          ].map((kpi) => (
+        <div className={`mt-5 grid gap-3 text-center ${hasAllowance ? 'grid-cols-4' : 'grid-cols-3'}`}>
+          {kpis.map((kpi) => (
             <div key={kpi.label} className="rounded-lg border border-zinc-300 p-3">
               <div className="font-mono text-xl font-bold tabular-nums">{kpi.value}</div>
               <div className="mt-1 text-[10px] tracking-wide text-zinc-500 uppercase">{kpi.label}</div>
             </div>
           ))}
         </div>
+        {hasAllowance && (
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Standard time and cost add a {r.allowancePct}% PF&amp;D allowance on top of observed time.
+          </p>
+        )}
 
         {/* Step detail (with notes) */}
         <h2 className="mt-6 text-sm font-semibold tracking-wider text-zinc-500 uppercase">Step detail</h2>
@@ -113,6 +123,8 @@ export function PrintView({
               <th className={th}>Avg</th>
               <th className={th}>Fastest</th>
               <th className={th}>Slowest</th>
+              <th className={th}>Std dev</th>
+              <th className={th}>CV</th>
               <th className={th}>Obs</th>
               <th className={th}>Cost/unit</th>
               <th className={`${th} pr-0`}>% of total</th>
@@ -139,11 +151,11 @@ export function PrintView({
                     {s.notes && <div className="mt-0.5 text-[11px] text-zinc-500 italic">{s.notes}</div>}
                   </td>
                   {!s.timed ? (
-                    <td className={td} colSpan={6}>
+                    <td className={td} colSpan={8}>
                       —
                     </td>
                   ) : s.obsCount === 0 ? (
-                    <td className={`${td} text-zinc-400`} colSpan={6}>
+                    <td className={`${td} text-zinc-400`} colSpan={8}>
                       No observations
                     </td>
                   ) : (
@@ -151,6 +163,8 @@ export function PrintView({
                       <td className={`${td} font-mono tabular-nums`}>{fmtMs(s.avgMs)}</td>
                       <td className={`${td} font-mono tabular-nums`}>{sp ? fmtMs(sp.minMs) : '—'}</td>
                       <td className={`${td} font-mono tabular-nums`}>{sp ? fmtMs(sp.maxMs) : '—'}</td>
+                      <td className={`${td} font-mono tabular-nums`}>{s.obsCount > 1 ? fmtMs(s.stdDevMs) : '—'}</td>
+                      <td className={td}>{s.obsCount > 1 ? `${s.cvPct.toFixed(0)}%` : '—'}</td>
                       <td className={td}>{s.obsCount}</td>
                       <td className={`${td} font-mono tabular-nums`}>{money(s.costPerUnit, wage)}</td>
                       <td className={`${td} pr-0`}>{s.pctOfTotal.toFixed(1)}%</td>
@@ -246,8 +260,12 @@ export function PrintView({
         )}
 
         <p className="mt-6 text-[10px] text-zinc-400">
-          Pestie Fulfillment · Time Study Tool · Averages are per-step observation means; cycle time is the sum of step
-          averages; cost = time × ${wage}/hr.
+          Pestie Fulfillment · Time Study Tool · Avg is the per-step observation mean (observed time); cycle time is the
+          sum of step averages.{' '}
+          {hasAllowance
+            ? `Standard time = observed × (1 + ${r.allowancePct}% PF&D); cost = standard time × $${wage}/hr.`
+            : `Cost = time × $${wage}/hr.`}{' '}
+          CV = std dev ÷ avg; std dev is sample (N−1).
         </p>
       </div>
     </div>

@@ -24,6 +24,7 @@ export type StepInput = {
 export type StudyInput = {
   title: string
   wageRate: number
+  allowancePct: number
   useWholeTimer: boolean
   steps: StepInput[]
 }
@@ -33,6 +34,7 @@ function validate(input: StudyInput): string | null {
   if (input.steps.length === 0) return 'Add at least one step to begin.'
   if (input.steps.some((s) => !s.name.trim())) return 'Every step needs a name.'
   if (!(input.wageRate >= 0)) return 'Wage rate must be zero or more.'
+  if (!(input.allowancePct >= 0 && input.allowancePct <= 100)) return 'Allowance must be between 0 and 100%.'
   return null
 }
 
@@ -55,6 +57,7 @@ export async function createStudy(input: StudyInput): Promise<ActionResult<{ id:
       created_by: userId,
       title: input.title.trim(),
       wage_rate: input.wageRate,
+      allowance_pct: input.allowancePct,
       use_whole_timer: input.useWholeTimer,
     })
     .select('id')
@@ -88,6 +91,7 @@ export async function updateStudy(studyId: string, input: StudyInput): Promise<A
     .update({
       title: input.title.trim(),
       wage_rate: input.wageRate,
+      allowance_pct: input.allowancePct,
       use_whole_timer: input.useWholeTimer,
     })
     .eq('id', studyId)
@@ -148,7 +152,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
 
   const { data: source, error } = await supabase
     .from('studies')
-    .select('title, wage_rate, use_whole_timer')
+    .select('title, wage_rate, allowance_pct, use_whole_timer')
     .eq('id', studyId)
     .maybeSingle()
   if (error) return { ok: false, error: error.message }
@@ -160,6 +164,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
       created_by: userId,
       title: `${source.title} (copy)`,
       wage_rate: source.wage_rate,
+      allowance_pct: source.allowance_pct,
       use_whole_timer: source.use_whole_timer,
     })
     .select('id')
@@ -194,7 +199,7 @@ export async function recordObservation(
   workerId: string | null = null
 ): Promise<ActionResult<{ id: string }>> {
   await requireUserId()
-  if (!Number.isFinite(durationMs) || durationMs < 0) return { ok: false, error: 'Invalid duration.' }
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return { ok: false, error: 'Invalid duration.' }
 
   const supabase = createServiceRoleClient()
 
@@ -216,6 +221,19 @@ export async function recordObservation(
   if (error) return { ok: false, error: error.message }
 
   return { ok: true, data: { id: data.id } }
+}
+
+/**
+ * Delete one observation — for discarding an abnormal/foreign reading (a
+ * mis-tap or interruption) so it can't skew the element's average or spread.
+ * Scoped to the study so a stray id can't reach another study's rows.
+ */
+export async function deleteObservation(studyId: string, observationId: string): Promise<ActionResult> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase.from('observations').delete().eq('id', observationId).eq('study_id', studyId)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
 }
 
 /** Record one full-process master run immediately. */

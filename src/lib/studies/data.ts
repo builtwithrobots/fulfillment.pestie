@@ -41,6 +41,7 @@ export type StudyDetail = {
   id: string
   title: string
   wageRate: number
+  allowancePct: number
   useWholeTimer: boolean
   createdAt: string
   updatedAt: string
@@ -95,7 +96,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
 
   const { data: study, error } = await supabase
     .from('studies')
-    .select('id, title, wage_rate, use_whole_timer, created_at, updated_at')
+    .select('id, title, wage_rate, allowance_pct, use_whole_timer, created_at, updated_at')
     .eq('id', studyId)
     .maybeSingle()
   if (error) throw error
@@ -112,6 +113,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
     id: study.id,
     title: study.title,
     wageRate: Number(study.wage_rate),
+    allowancePct: Number(study.allowance_pct),
     useWholeTimer: study.use_whole_timer,
     createdAt: study.created_at,
     updatedAt: study.updated_at,
@@ -143,7 +145,7 @@ export async function getStudyWithObservations(studyId: string): Promise<{
   const [{ data: obs, error: obsError }, { data: runs, error: runsError }] = await Promise.all([
     supabase
       .from('observations')
-      .select('step_id, duration_ms, worker_id')
+      .select('id, step_id, duration_ms, worker_id')
       .eq('study_id', studyId)
       .order('recorded_at', { ascending: true }),
     supabase
@@ -158,7 +160,7 @@ export async function getStudyWithObservations(studyId: string): Promise<{
   const byStep = new Map<string, Observation[]>()
   for (const row of obs ?? []) {
     const list = byStep.get(row.step_id) ?? []
-    list.push({ durationMs: row.duration_ms, workerId: row.worker_id })
+    list.push({ id: row.id, durationMs: row.duration_ms, workerId: row.worker_id })
     byStep.set(row.step_id, list)
   }
 

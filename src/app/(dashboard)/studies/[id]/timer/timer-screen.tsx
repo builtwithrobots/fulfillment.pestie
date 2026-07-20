@@ -21,7 +21,7 @@ import { Heading } from '@/components/heading'
 import { Input } from '@/components/input'
 import { Select } from '@/components/select'
 import { createRosterWorker } from '@/lib/roster/actions'
-import { recordMasterRun, recordObservation } from '@/lib/studies/actions'
+import { deleteObservation, recordMasterRun, recordObservation } from '@/lib/studies/actions'
 import { fmtMs, type Observation, type StepWithObservations } from '@/lib/time-study'
 import { Card, CardTitle } from '../../ui'
 
@@ -107,9 +107,36 @@ export function TimerScreen({
     }
     recordObservation(studyId, stepId, elapsed, stampedWorker)
       .then((res) => {
-        if (!res.ok) rollback(res.error)
+        if (!res.ok) return rollback(res.error)
+        // Tag the optimistic row with its DB id so it can be deleted later.
+        setSteps((prev) =>
+          prev.map((s) =>
+            s.id === stepId
+              ? { ...s, observations: s.observations.map((o) => (o === obs ? { ...o, id: res.data.id } : o)) }
+              : s
+          )
+        )
       })
       .catch(() => rollback('network error — check your connection.'))
+  }
+
+  // Discard one recorded reading (a mis-tap or abnormal cycle) so it can't skew
+  // the step's average or spread. Optimistic removal with restore on failure.
+  function removeObservation(stepId: string, target: Observation) {
+    if (!target.id) return // not yet persisted — nothing to delete server-side
+    const id = target.id
+    setSteps((prev) =>
+      prev.map((s) => (s.id === stepId ? { ...s, observations: s.observations.filter((o) => o !== target) } : s))
+    )
+    const restore = (reason: string) => {
+      setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, observations: [...s.observations, target] } : s)))
+      showToast(`Couldn't delete observation: ${reason}`)
+    }
+    deleteObservation(studyId, id)
+      .then((res) => {
+        if (!res.ok) restore(res.error)
+      })
+      .catch(() => restore('network error — check your connection.'))
   }
 
   // ── Per-step timers ──────────────────────────────────────────
@@ -583,11 +610,19 @@ export function TimerScreen({
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {step.observations.map((o, oi) => (
                         <span
-                          key={oi}
+                          key={o.id ?? oi}
                           title={`Obs ${oi + 1}${workerName(o.workerId) ? ` — ${workerName(o.workerId)}` : ''}`}
-                          className="rounded-md bg-zinc-100 px-2 py-0.5 font-mono text-xs text-zinc-500 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10"
+                          className="inline-flex items-center gap-1 rounded-md bg-zinc-100 py-0.5 pr-1 pl-2 font-mono text-xs text-zinc-500 ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10"
                         >
                           {fmtMs(o.durationMs)}
+                          <button
+                            type="button"
+                            onClick={() => removeObservation(step.id, o)}
+                            aria-label={`Delete observation ${oi + 1} (${fmtMs(o.durationMs)})`}
+                            className="rounded p-0.5 text-zinc-400 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400"
+                          >
+                            <X className="size-3" />
+                          </button>
                         </span>
                       ))}
                     </div>

@@ -23,7 +23,8 @@ export function StudyHelp() {
             <p className="mt-1">
               List the steps of your process in order. Mark each step <em>Timed</em> or <em>Documented</em>: timed steps
               you clock with a stopwatch, documented steps are just notes. Add an hourly wage to turn times into costs,
-              and switch on the master timer to also clock the whole process end-to-end.
+              set a <em>PF&amp;D allowance</em> to convert observed time into the standard time you actually staff and
+              cost to, and switch on the master timer to also clock the whole process end-to-end.
             </p>
           </section>
 
@@ -32,7 +33,9 @@ export function StudyHelp() {
             <p className="mt-1">
               On the Timer tab, tap <em>Start</em> when a step begins and <em>Stop</em> when it ends. Every Stop saves
               one observation to the database instantly, so refreshing or switching devices never loses data. Repeat
-              each step several times — the more observations, the more reliable the averages.
+              each step several times — the more observations, the more reliable the averages, and the Results tab tells
+              you when you&apos;ve timed enough. Mis-tap or catch an abnormal cycle? Tap the <em>×</em> on that reading to
+              discard it so it can&apos;t skew the numbers.
             </p>
             <p className="mt-1.5">
               Pick who you&apos;re observing in the <em>Timing</em> selector so recordings land on their roster profile.
@@ -51,15 +54,30 @@ export function StudyHelp() {
             <ul className="mt-1 list-disc space-y-1 pl-5">
               <li>
                 <span className="font-medium text-zinc-950 dark:text-white">Avg time</span> — a step&apos;s observations
-                averaged together.
+                averaged together (the observed time).
               </li>
               <li>
-                <span className="font-medium text-zinc-950 dark:text-white">Avg cycle time</span> — all the step
-                averages added up: the time for one unit to go through every step.
+                <span className="font-medium text-zinc-950 dark:text-white">Standard time</span> — observed time × (1 +
+                your PF&amp;D allowance). This is what you staff and cost to; with no allowance it equals the observed
+                time.
               </li>
               <li>
-                <span className="font-medium text-zinc-950 dark:text-white">Cost per unit</span> — time × your wage
-                rate. A 30-second step at $18/hr costs 15¢ per unit.
+                <span className="font-medium text-zinc-950 dark:text-white">Cycle time</span> — the step times added up:
+                the time for one unit to go through every step.
+              </li>
+              <li>
+                <span className="font-medium text-zinc-950 dark:text-white">Cost per unit</span> — standard time × your
+                wage rate. A 30-second step at $18/hr costs 15¢ per unit before allowance.
+              </li>
+              <li>
+                <span className="font-medium text-zinc-950 dark:text-white">Consistency (CV)</span> — a step&apos;s
+                spread ÷ its average. Under 10% is steady; over 25% is erratic and worth a look (often two elements timed
+                as one).
+              </li>
+              <li>
+                <span className="font-medium text-zinc-950 dark:text-white">Enough cycles</span> — from the spread, the
+                tool suggests how many repeats you need to trust the average (±10% at 95% confidence). A{' '}
+                <span className="font-medium">(+N)</span> means keep timing; a ✓ means you&apos;re there.
               </li>
               <li>
                 <span className="font-medium text-zinc-950 dark:text-white">Bottleneck</span> — the slowest step(s).

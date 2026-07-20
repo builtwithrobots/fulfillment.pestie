@@ -2,8 +2,16 @@
  * Pure, isomorphic helpers for the Time Study Tool.
  *
  * No React, no DB, no `server-only` — safe to import from Server Components,
- * Client Components, and server actions alike. The results math mirrors the
- * original prototype's buildResults()/copyResults() logic exactly.
+ * Client Components, and server actions alike.
+ *
+ * Methodology: readings are averaged per element (OBSERVED time). A study-level
+ * PF&D allowance converts observed time into STANDARD time
+ * (standard = observed × (1 + allowance)), which is the correct basis for labor
+ * cost. Per-element spread (sample std dev, N-1) and its coefficient of
+ * variation gauge consistency and drive a recommended-cycles target, so you can
+ * tell when an element has been timed enough. Subjective performance rating is
+ * intentionally omitted — pace bias is controlled structurally (many operators,
+ * many cycles) rather than by analyst judgement.
  */
 
 /** mm:ss.d — matches the prototype's fmtMs(). */
@@ -17,6 +25,7 @@ export function fmtMs(ms: number): string {
 
 /** One timing event (a step observation or a full-process run) and who did it. */
 export type Observation = {
+  id?: string // DB id when persisted; absent for a just-recorded optimistic row
   durationMs: number
   workerId: string | null
 }
@@ -30,60 +39,93 @@ export type StepWithObservations = {
   observations: Observation[] // oldest → newest
 }
 
-const sumMs = (list: Observation[]) => list.reduce((a, o) => a + o.durationMs, 0)
+// Sample-size guidance. Cycles needed to estimate the mean within ±PRECISION at
+// CONFIDENCE, from the observed spread: n = (z·s / (k·x̄))² = (z/k)²·CV². 95%
+// confidence with ±10% precision is a common shop-floor target.
+export const SAMPLE_CONFIDENCE_Z = 1.96
+export const SAMPLE_PRECISION_K = 0.1
+
+const avgOf = (nums: number[]) => (nums.length ? nums.reduce((a, v) => a + v, 0) / nums.length : 0)
+
+/** Sample standard deviation (N-1, Bessel's correction). 0 for fewer than two values. */
+function sampleStdDev(values: number[], avg: number): number {
+  if (values.length < 2) return 0
+  return Math.sqrt(values.reduce((a, v) => a + (v - avg) ** 2, 0) / (values.length - 1))
+}
+
+/**
+ * Cycles recommended to reach ±k of the mean at the set confidence, from the
+ * observed spread. Null when it can't be estimated yet (needs ≥2 readings and a
+ * positive mean).
+ */
+function recommendedCycles(count: number, avg: number, stdDev: number): number | null {
+  if (count < 2 || avg <= 0) return null
+  const cv = stdDev / avg
+  return Math.ceil((SAMPLE_CONFIDENCE_Z / SAMPLE_PRECISION_K) ** 2 * cv ** 2)
+}
 
 export type StepResult = {
   id: string
   name: string
   notes: string | null
   timed: boolean
-  avgMs: number
+  avgMs: number // observed average (mean of readings)
+  stdMs: number // standard time = observed × (1 + allowance)
+  stdDevMs: number // sample std dev of readings (N-1)
+  cvPct: number // coefficient of variation = stdDev / avg × 100
   obsCount: number
-  costPerUnit: number
+  recommendedObs: number | null // cycles for ±10% @ 95%; null when not estimable
+  enoughObs: boolean
+  costPerUnit: number // standard time × wage
   pctOfTotal: number
   isBottleneck: boolean
 }
 
 export type MasterStats = {
   runs: number[]
-  avgMs: number
+  avgMs: number // observed
+  stdMs: number // standard = observed × (1 + allowance)
   minMs: number
   maxMs: number
-  stdDevMs: number
-  avgCost: number
+  stdDevMs: number // sample std dev (N-1)
+  cvPct: number
+  avgCost: number // standard × wage
 }
 
 export type StudyResults = {
   steps: StepResult[]
   timedCount: number
   documentedCount: number
-  totalMs: number
-  totalCost: number
+  totalMs: number // observed cycle time (sum of observed step averages)
+  totalStdMs: number // standard cycle time = totalMs × (1 + allowance)
+  totalCost: number // standard labor cost / unit
   totalObs: number
+  allowancePct: number
   bottleneck: StepResult | null
   master: MasterStats | null
 }
 
 /**
  * Compute everything the results screen needs from the raw steps + master runs.
+ * `allowancePct` (PF&D) converts observed time into standard time and cost.
  * Bottleneck set = top 20% of timed-with-observations steps by average time
- * (at least one), matching the prototype.
+ * (at least one).
  */
 export function computeResults(
   steps: StepWithObservations[],
   wageRate: number,
-  masterRuns: Observation[]
+  masterRuns: Observation[],
+  allowancePct = 0
 ): StudyResults {
   const wagePerMs = (wageRate || 0) / 3_600_000
+  const allowMult = 1 + (allowancePct || 0) / 100
 
   const timedWithObs = steps.filter((s) => s.timed && s.observations.length > 0)
-  const stepAverages = timedWithObs.map((s) => {
-    const avgMs = sumMs(s.observations) / s.observations.length
-    return { id: s.id, avgMs }
-  })
+  const stepAverages = timedWithObs.map((s) => ({ id: s.id, avgMs: avgOf(s.observations.map((o) => o.durationMs)) }))
 
   const totalMs = stepAverages.reduce((a, b) => a + b.avgMs, 0)
-  const totalCost = totalMs * wagePerMs
+  const totalStdMs = totalMs * allowMult
+  const totalCost = totalStdMs * wagePerMs
   const totalObs = timedWithObs.reduce((a, s) => a + s.observations.length, 0)
 
   const sorted = [...stepAverages].sort((a, b) => b.avgMs - a.avgMs)
@@ -91,16 +133,24 @@ export function computeResults(
   const bottleneckIds = new Set(sorted.slice(0, bnCount).map((s) => s.id))
 
   const results: StepResult[] = steps.map((s) => {
-    const obsCount = s.observations.length
-    const avgMs = obsCount > 0 ? sumMs(s.observations) / obsCount : 0
+    const durations = s.observations.map((o) => o.durationMs)
+    const obsCount = durations.length
+    const avgMs = avgOf(durations)
+    const stdDevMs = sampleStdDev(durations, avgMs)
+    const recommendedObs = recommendedCycles(obsCount, avgMs, stdDevMs)
     return {
       id: s.id,
       name: s.name,
       notes: s.notes,
       timed: s.timed,
       avgMs,
+      stdMs: avgMs * allowMult,
+      stdDevMs,
+      cvPct: avgMs > 0 ? (stdDevMs / avgMs) * 100 : 0,
       obsCount,
-      costPerUnit: avgMs * wagePerMs,
+      recommendedObs,
+      enoughObs: recommendedObs != null && obsCount >= recommendedObs,
+      costPerUnit: avgMs * allowMult * wagePerMs,
       pctOfTotal: totalMs > 0 && s.timed && obsCount > 0 ? (avgMs / totalMs) * 100 : 0,
       isBottleneck: bottleneckIds.has(s.id),
     }
@@ -112,15 +162,17 @@ export function computeResults(
   let master: MasterStats | null = null
   if (masterRuns.length > 0) {
     const durations = masterRuns.map((r) => r.durationMs)
-    const avgMs = sumMs(masterRuns) / masterRuns.length
-    const stdDevMs = Math.sqrt(durations.map((r) => (r - avgMs) ** 2).reduce((a, b) => a + b, 0) / masterRuns.length)
+    const avgMs = avgOf(durations)
+    const stdDevMs = sampleStdDev(durations, avgMs)
     master = {
       runs: durations,
       avgMs,
+      stdMs: avgMs * allowMult,
       minMs: Math.min(...durations),
       maxMs: Math.max(...durations),
       stdDevMs,
-      avgCost: avgMs * wagePerMs,
+      cvPct: avgMs > 0 ? (stdDevMs / avgMs) * 100 : 0,
+      avgCost: avgMs * allowMult * wagePerMs,
     }
   }
 
@@ -129,8 +181,10 @@ export function computeResults(
     timedCount: steps.filter((s) => s.timed).length,
     documentedCount: steps.filter((s) => !s.timed).length,
     totalMs,
+    totalStdMs,
     totalCost,
     totalObs,
+    allowancePct: allowancePct || 0,
     bottleneck,
     master,
   }
@@ -205,22 +259,29 @@ export function resultsToPlainText(
   title: string,
   wageRate: number,
   steps: StepWithObservations[],
-  masterRuns: Observation[]
+  masterRuns: Observation[],
+  allowancePct = 0
 ): string {
   const wagePerMs = (wageRate || 0) / 3_600_000
+  const allowMult = 1 + (allowancePct || 0) / 100
   let text = `TIME STUDY: ${title}\n`
   text += `Date: ${new Date().toLocaleDateString()}\n`
-  text += `Wage rate: $${wageRate}/hr\n\n`
-  text += 'Step\tType\tAvg Time\tObs\tCost/Unit\n'
+  text += `Wage rate: $${wageRate}/hr\n`
+  text += `PF&D allowance: ${allowancePct || 0}%\n\n`
+  text += 'Step\tType\tObs avg\tStd time\tStd dev\tCV%\tObs\tCost/Unit\n'
   for (const s of steps) {
     if (!s.timed) {
-      text += `${s.name}\tDocumented\t—\t—\t—\n`
+      text += `${s.name}\tDocumented\t—\t—\t—\t—\t—\t—\n`
     } else if (s.observations.length === 0) {
-      text += `${s.name}\tTimed\tNo obs\t0\t—\n`
+      text += `${s.name}\tTimed\tNo obs\t—\t—\t—\t0\t—\n`
     } else {
-      const avg = sumMs(s.observations) / s.observations.length
-      const cost = avg * wagePerMs
-      text += `${s.name}\tTimed\t${fmtMs(avg)}\t${s.observations.length}\t${wageRate > 0 ? '$' + cost.toFixed(4) : '—'}\n`
+      const durations = s.observations.map((o) => o.durationMs)
+      const avg = avgOf(durations)
+      const sd = sampleStdDev(durations, avg)
+      const std = avg * allowMult
+      const cost = std * wagePerMs
+      const cv = avg > 0 ? (sd / avg) * 100 : 0
+      text += `${s.name}\tTimed\t${fmtMs(avg)}\t${fmtMs(std)}\t${fmtMs(sd)}\t${cv.toFixed(1)}%\t${s.observations.length}\t${wageRate > 0 ? '$' + cost.toFixed(4) : '—'}\n`
     }
   }
   if (masterRuns.length > 0) {
