@@ -23,8 +23,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
 
   const { study, steps, masterRuns } = data
   const wage = study.wageRate
-  const r = computeResults(steps, wage, study.useWholeTimer ? masterRuns : [])
-  const copyText = resultsToPlainText(study.title, wage, steps, study.useWholeTimer ? masterRuns : [])
+  const allowance = study.allowancePct
+  const r = computeResults(steps, wage, study.useWholeTimer ? masterRuns : [], allowance)
+  const copyText = resultsToPlainText(study.title, wage, steps, study.useWholeTimer ? masterRuns : [], allowance)
   const perWorker = computePerWorker(steps, study.useWholeTimer ? masterRuns : [])
 
   const chartSteps = r.steps.filter((s) => s.timed && s.obsCount > 0)
@@ -35,6 +36,8 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
   const cycleMs = chartSteps.length > 0 ? r.totalMs : (r.master?.avgMs ?? 0)
   const cycleCost = chartSteps.length > 0 ? r.totalCost : (r.master?.avgCost ?? 0)
   const totalRecordings = r.totalObs + (r.master?.runs.length ?? 0)
+  const hasAllowance = r.allowancePct > 0
+  const stdCycleMs = chartSteps.length > 0 ? r.totalStdMs : (r.master?.stdMs ?? 0)
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -45,19 +48,31 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
       </p>
 
       {/* KPI grid */}
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className={`mt-6 grid grid-cols-2 gap-3 ${hasAllowance ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
         <Stat
-          label="Avg cycle time"
+          label={hasAllowance ? 'Observed cycle' : 'Avg cycle time'}
           value={cycleMs > 0 ? fmtMs(cycleMs) : '—'}
           tone="text-blue-600 dark:text-blue-400"
         />
+        {hasAllowance && (
+          <Stat
+            label="Standard / unit"
+            value={stdCycleMs > 0 ? fmtMs(stdCycleMs) : '—'}
+            tone="text-violet-600 dark:text-violet-400"
+          />
+        )}
         <Stat
-          label="Labor cost / unit"
+          label={hasAllowance ? 'Cost / unit (std)' : 'Labor cost / unit'}
           value={wage > 0 && cycleMs > 0 ? money(cycleCost, wage) : '—'}
           tone="text-emerald-600 dark:text-emerald-400"
         />
         <Stat label="Total observations" value={String(totalRecordings)} />
       </div>
+      {hasAllowance && (
+        <p className="mt-2 text-xs text-zinc-500">
+          Standard time and cost add a {r.allowancePct}% PF&amp;D allowance on top of observed time.
+        </p>
+      )}
 
       {/* Master timer results */}
       {r.master && (
@@ -138,6 +153,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
             <tr className="border-b border-zinc-950/10 text-left text-[11px] tracking-wide text-zinc-500 uppercase dark:border-white/10">
               <th className="py-2 pr-3 font-medium">Step</th>
               <th className="py-2 pr-3 font-medium">Avg time</th>
+              <th className="py-2 pr-3 font-medium">Consistency</th>
               <th className="py-2 pr-3 font-medium">Obs</th>
               <th className="py-2 pr-3 font-medium">Cost/unit</th>
               <th className="py-2 font-medium">% of total</th>
@@ -158,6 +174,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5 pr-3">—</td>
+                    <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5">—</td>
                   </tr>
                 )
@@ -167,6 +184,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                   <tr key={s.id} className="border-b border-zinc-950/5 dark:border-white/5">
                     <td className="py-2.5 pr-3 font-medium">{s.name}</td>
                     <td className="py-2.5 pr-3 text-zinc-400">No obs</td>
+                    <td className="py-2.5 pr-3 text-zinc-400">—</td>
                     <td className="py-2.5 pr-3">0</td>
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5">—</td>
@@ -184,7 +202,36 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                     )}
                   </td>
                   <td className="py-2.5 pr-3 font-mono tabular-nums">{fmtMs(s.avgMs)}</td>
-                  <td className="py-2.5 pr-3">{s.obsCount}</td>
+                  <td className="py-2.5 pr-3">
+                    {s.obsCount < 2 ? (
+                      <span className="text-zinc-400">—</span>
+                    ) : (
+                      <span
+                        className={
+                          s.cvPct <= 10
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : s.cvPct <= 25
+                              ? 'text-amber-600 dark:text-amber-400'
+                              : 'text-red-600 dark:text-red-400'
+                        }
+                        title={`Std dev ${fmtMs(s.stdDevMs)} across ${s.obsCount} readings`}
+                      >
+                        {s.cvPct.toFixed(0)}% CV
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-3">
+                    {s.obsCount}
+                    {s.recommendedObs != null && !s.enoughObs && (
+                      <span
+                        className="ml-1 text-xs text-amber-600 dark:text-amber-400"
+                        title={`About ${s.recommendedObs} cycles recommended for ±10% at 95% confidence`}
+                      >
+                        (+{Math.max(1, s.recommendedObs - s.obsCount)})
+                      </span>
+                    )}
+                    {s.enoughObs && <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">✓</span>}
+                  </td>
                   <td className="py-2.5 pr-3 font-mono tabular-nums">{money(s.costPerUnit, wage)}</td>
                   <td className="py-2.5">{s.pctOfTotal.toFixed(1)}%</td>
                 </tr>
@@ -192,6 +239,12 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
             })}
           </tbody>
         </table>
+        <p className="mt-3 text-xs text-zinc-500">
+          <span className="font-medium">Consistency</span> is each step&apos;s coefficient of variation (spread ÷
+          average) across its readings — under 10% is steady, over 25% is erratic.{' '}
+          <span className="font-medium">(+N)</span> flags about how many more cycles are recommended to pin the average
+          down (±10% at 95% confidence); <span className="text-emerald-600 dark:text-emerald-400">✓</span> means enough.
+        </p>
       </Card>
 
       {/* Per-employee breakdown -- only when timings were attributed */}

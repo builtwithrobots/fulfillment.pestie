@@ -52,6 +52,7 @@ export type Database = {
         created_by: string
         title: string
         wage_rate: number
+        allowance_pct: number
         use_whole_timer: boolean
         created_at: string
         updated_at: string

@@ -26,6 +26,7 @@ export type SetupInitial = {
   id?: string
   title: string
   wageRate: number
+  allowancePct: number
   useWholeTimer: boolean
   steps: { id: string; name: string; notes: string | null; timed: boolean }[]
 }
@@ -40,6 +41,7 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
 
   const [title, setTitle] = useState(initial?.title ?? '')
   const [wage, setWage] = useState(initial?.wageRate ? String(initial.wageRate) : '')
+  const [allowance, setAllowance] = useState(initial?.allowancePct ? String(initial.allowancePct) : '')
   const [useWhole, setUseWhole] = useState(initial?.useWholeTimer ?? false)
   const [steps, setSteps] = useState<BuilderStep[]>(
     () =>
@@ -88,6 +90,7 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
     const input: StudyInput = {
       title,
       wageRate: parseFloat(wage) || 0,
+      allowancePct: parseFloat(allowance) || 0,
       useWholeTimer: useWhole,
       steps: steps.map((s) => ({ id: s.id, name: s.name, notes: s.notes, timed: s.timed })),
     }
@@ -134,6 +137,22 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
               step="0.01"
               placeholder="e.g. 18.00"
             />
+          </Field>
+          <Field>
+            <Label>PF&D allowance (%) — optional</Label>
+            <Input
+              type="number"
+              value={allowance}
+              onChange={(e) => setAllowance(e.target.value)}
+              min={0}
+              max={100}
+              step="1"
+              placeholder="e.g. 15"
+            />
+            <p className="mt-1.5 text-xs text-zinc-500">
+              Personal, fatigue &amp; delay time added to the observed time to get the standard time you actually staff
+              and cost to (typically 10–20%). Leave blank for raw observed time.
+            </p>
           </Field>
         </div>
       </Card>
