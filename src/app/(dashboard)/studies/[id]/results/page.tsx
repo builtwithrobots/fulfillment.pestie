@@ -17,6 +17,10 @@ function money(v: number, wage: number) {
   return wage > 0 ? `$${v.toFixed(4)}` : '—'
 }
 
+function perHour(n: number) {
+  return Math.round(n).toLocaleString('en-US')
+}
+
 // Full-run consistency bands, keyed on coefficient of variation (std dev ÷
 // average) so they hold for any process length. Same 10% / 25% thresholds as
 // the per-step Consistency column, mapped to a suggested action.
@@ -72,6 +76,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
   const stdCycleMs = chartSteps.length > 0 ? r.totalStdMs : (r.master?.stdMs ?? 0)
   // Consistency band for the full runs — only meaningful with ≥2 runs.
   const masterBand = r.master && r.master.runs.length >= 2 ? bandFor(r.master.cvPct) : null
+  // KPI tiles: 3 base, +1 for allowance, +2 for piece economics.
+  const kpiCount = 3 + (hasAllowance ? 1 : 0) + (r.hasPieceCounts ? 2 : 0)
+  const kpiCols = kpiCount === 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -82,7 +89,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
       </p>
 
       {/* KPI grid */}
-      <div className={`mt-6 grid grid-cols-2 gap-3 ${hasAllowance ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
+      <div className={`mt-6 grid grid-cols-2 gap-3 ${kpiCols}`}>
         <Stat
           label={hasAllowance ? 'Observed cycle' : 'Avg cycle time'}
           value={cycleMs > 0 ? fmtMs(cycleMs) : '—'}
@@ -110,6 +117,28 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
           }
         />
         <Stat label="Total observations" value={String(totalRecordings)} />
+        {r.hasPieceCounts && (
+          <>
+            <Stat
+              label="Cost / piece"
+              value={wage > 0 && r.costPerPiece > 0 ? money(r.costPerPiece, wage) : '—'}
+              tone="text-emerald-600 dark:text-emerald-400"
+              info={
+                "Standard labor cost to produce one finished piece — each step's standard time ÷ its pieces per cycle, " +
+                'summed, × wage. A true unit cost even when some steps run in batches.'
+              }
+            />
+            <Stat
+              label="Throughput"
+              value={r.throughputPerHour > 0 ? `${perHour(r.throughputPerHour)}/hr` : '—'}
+              tone="text-blue-600 dark:text-blue-400"
+              info={
+                'Estimated line output in finished pieces per hour, capped by the slowest station (the bottleneck by ' +
+                'pieces/hour). Assumes one station per step.'
+              }
+            />
+          </>
+        )}
       </div>
       {hasAllowance && (
         <p className="mt-2 text-xs text-zinc-500">
@@ -310,6 +339,14 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                 <tr key={s.id} className="border-b border-zinc-950/5 dark:border-white/5">
                   <td className="py-2.5 pr-3 font-medium">
                     {s.name}
+                    {s.piecesPerCycle > 1 && (
+                      <span
+                        className="ml-1.5 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:text-blue-400"
+                        title={`${s.piecesPerCycle} pieces per cycle`}
+                      >
+                        ×{s.piecesPerCycle}
+                      </span>
+                    )}
                     {s.isBottleneck && (
                       <span className="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 uppercase dark:text-amber-400">
                         Bottleneck
@@ -371,6 +408,53 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
           down (±10% at 95% confidence); <span className="text-emerald-600 dark:text-emerald-400">✓</span> means enough.
         </p>
       </Card>
+
+      {/* Throughput & piece economics -- only when a step produces >1 piece/cycle */}
+      {r.hasPieceCounts && chartSteps.length > 0 && (
+        <Card className="mt-4 overflow-x-auto">
+          <CardTitle>Throughput &amp; piece economics</CardTitle>
+          <table className="mt-4 w-full min-w-[32rem] text-sm">
+            <thead>
+              <tr className="border-b border-zinc-950/10 text-left text-[11px] tracking-wide text-zinc-500 uppercase dark:border-white/10">
+                <th className="py-2 pr-3 font-medium">Step</th>
+                <th className="py-2 pr-3 font-medium">Pcs/cycle</th>
+                <th className="py-2 pr-3 font-medium">Per piece</th>
+                <th className="py-2 pr-3 font-medium">Pieces/hr</th>
+                <th className="py-2 font-medium">Cost/piece</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chartSteps.map((s) => (
+                <tr key={s.id} className="border-b border-zinc-950/5 dark:border-white/5">
+                  <td className="py-2.5 pr-3 font-medium">
+                    {s.name}
+                    {r.throughputBottleneck?.id === s.id && (
+                      <span className="ml-2 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-amber-700 uppercase dark:text-amber-400">
+                        Limits line
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2.5 pr-3 tabular-nums">{s.piecesPerCycle}</td>
+                  <td className="py-2.5 pr-3 font-mono tabular-nums">{fmtMs(s.perPieceMs)}</td>
+                  <td className="py-2.5 pr-3 font-mono tabular-nums">{perHour(s.piecesPerHour)}</td>
+                  <td className="py-2.5 font-mono tabular-nums">{money(s.costPerPiece, wage)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-3 text-xs text-zinc-500">
+            Per-piece figures divide each step&apos;s time by its pieces/cycle.{' '}
+            <span className="font-medium">Line throughput</span> is capped by the slowest station
+            {r.throughputBottleneck ? (
+              <>
+                {' '}
+                — <span className="font-medium">{r.throughputBottleneck.name}</span> at {perHour(r.throughputPerHour)}/hr
+              </>
+            ) : null}{' '}
+            (assumes one station per step).
+          </p>
+        </Card>
+      )}
 
       {/* Per-employee breakdown -- only when timings were attributed */}
       {perWorker.length > 0 && (

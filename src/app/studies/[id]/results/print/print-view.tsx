@@ -21,6 +21,10 @@ function money(v: number, wage: number) {
   return wage > 0 ? `$${v.toFixed(4)}` : '—'
 }
 
+function perHour(n: number) {
+  return Math.round(n).toLocaleString('en-US')
+}
+
 const th = 'border-b border-zinc-300 py-1.5 pr-3 text-left align-bottom font-semibold'
 const td = 'border-b border-zinc-200 py-1.5 pr-3 align-top'
 
@@ -184,6 +188,51 @@ export function PrintView({
             {wage > 0 ? `, ${money(r.bottleneck.costPerUnit, wage)} per unit` : ''}). Improving this step has the
             biggest impact on throughput.
           </p>
+        )}
+
+        {/* Throughput & piece economics */}
+        {r.hasPieceCounts && (
+          <>
+            <h2 className="mt-6 text-sm font-semibold tracking-wider text-zinc-500 uppercase">
+              Throughput &amp; piece economics
+            </h2>
+            <p className="mt-1 text-xs">
+              Cost per finished piece <span className="font-mono tabular-nums">{money(r.costPerPiece, wage)}</span> · Line
+              throughput <span className="font-mono tabular-nums">{perHour(r.throughputPerHour)}/hr</span>
+              {r.throughputBottleneck ? <> (capped by {r.throughputBottleneck.name})</> : null}
+            </p>
+            <table className="mt-2 w-full text-xs">
+              <thead>
+                <tr>
+                  <th className={th}>Step</th>
+                  <th className={th}>Pcs/cyc</th>
+                  <th className={th}>Per piece</th>
+                  <th className={th}>Pcs/hr</th>
+                  <th className={`${th} pr-0`}>Cost/piece</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.steps
+                  .filter((s) => s.timed && s.obsCount > 0)
+                  .map((s) => (
+                    <tr key={s.id}>
+                      <td className={td}>
+                        {s.name}
+                        {r.throughputBottleneck?.id === s.id && (
+                          <span className="ml-1.5 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-700 uppercase">
+                            Limits line
+                          </span>
+                        )}
+                      </td>
+                      <td className={`${td} tabular-nums`}>{s.piecesPerCycle}</td>
+                      <td className={`${td} font-mono tabular-nums`}>{fmtMs(s.perPieceMs)}</td>
+                      <td className={`${td} font-mono tabular-nums`}>{perHour(s.piecesPerHour)}</td>
+                      <td className={`${td} pr-0 font-mono tabular-nums`}>{money(s.costPerPiece, wage)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </>
         )}
 
         {/* Master runs */}

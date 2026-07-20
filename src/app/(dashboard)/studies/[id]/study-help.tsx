@@ -24,7 +24,9 @@ export function StudyHelp() {
               List the steps of your process in order. Mark each step <em>Timed</em> or <em>Documented</em>: timed steps
               you clock with a stopwatch, documented steps are just notes. Add an hourly wage to turn times into costs,
               set a <em>PF&amp;D allowance</em> to convert observed time into the standard time you actually staff and
-              cost to, and switch on the master timer to also clock the whole process end-to-end.
+              cost to, and switch on the master timer to also clock the whole process end-to-end. If a step finishes
+              several pieces at once (a batch), set its <em>Pieces / cycle</em> so results report true per-piece time,
+              throughput, and cost.
             </p>
           </section>
 
@@ -69,6 +71,11 @@ export function StudyHelp() {
               <li>
                 <span className="font-medium text-zinc-950 dark:text-white">Cost per unit</span> — standard time × your
                 wage rate. A 30-second step at $18/hr costs 15¢ per unit before allowance.
+              </li>
+              <li>
+                <span className="font-medium text-zinc-950 dark:text-white">Throughput &amp; piece economics</span> — set
+                a step&apos;s <em>Pieces / cycle</em> when it finishes a batch, and results add per-piece time,
+                pieces/hour, and cost per finished piece; line throughput is set by the slowest station.
               </li>
               <li>
                 <span className="font-medium text-zinc-950 dark:text-white">Consistency (CV)</span> — a step&apos;s

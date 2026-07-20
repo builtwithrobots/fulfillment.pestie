@@ -19,6 +19,7 @@ type BuilderStep = {
   name: string
   notes: string
   timed: boolean
+  piecesPerCycle: string // free-text while editing; parsed to an int ≥1 on save
   notesOpen: boolean
 }
 
@@ -28,7 +29,7 @@ export type SetupInitial = {
   wageRate: number
   allowancePct: number
   useWholeTimer: boolean
-  steps: { id: string; name: string; notes: string | null; timed: boolean }[]
+  steps: { id: string; name: string; notes: string | null; timed: boolean; piecesPerCycle: number }[]
 }
 
 let keySeq = 0
@@ -51,6 +52,7 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
         name: s.name,
         notes: s.notes ?? '',
         timed: s.timed,
+        piecesPerCycle: String(s.piecesPerCycle ?? 1),
         notesOpen: !!s.notes,
       })) ?? []
   )
@@ -61,7 +63,10 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
   function addStep() {
     const name = newStep.trim()
     if (!name) return
-    setSteps((prev) => [...prev, { key: nextKey(), name, notes: '', timed: true, notesOpen: false }])
+    setSteps((prev) => [
+      ...prev,
+      { key: nextKey(), name, notes: '', timed: true, piecesPerCycle: '1', notesOpen: false },
+    ])
     setNewStep('')
     newStepRef.current?.focus()
   }
@@ -92,7 +97,13 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
       wageRate: parseFloat(wage) || 0,
       allowancePct: parseFloat(allowance) || 0,
       useWholeTimer: useWhole,
-      steps: steps.map((s) => ({ id: s.id, name: s.name, notes: s.notes, timed: s.timed })),
+      steps: steps.map((s) => ({
+        id: s.id,
+        name: s.name,
+        notes: s.notes,
+        timed: s.timed,
+        piecesPerCycle: Math.max(1, Math.floor(Number(s.piecesPerCycle) || 1)),
+      })),
     }
     startTransition(async () => {
       if (editing && initial?.id) {
@@ -217,6 +228,20 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
                   />
                   {step.timed ? 'Timed' : 'Documented only'}
                 </label>
+                {step.timed && (
+                  <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-300">
+                    <span>Pieces / cycle</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      step="1"
+                      value={step.piecesPerCycle}
+                      onChange={(e) => patchStep(step.key, { piecesPerCycle: e.target.value })}
+                      aria-label={`Pieces per cycle for step ${i + 1}`}
+                      className="w-20"
+                    />
+                  </label>
+                )}
                 <button
                   type="button"
                   onClick={() => patchStep(step.key, { notesOpen: !step.notesOpen })}

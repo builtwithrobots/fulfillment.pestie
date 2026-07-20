@@ -19,6 +19,7 @@ export type StepInput = {
   name: string
   notes: string
   timed: boolean
+  piecesPerCycle: number
 }
 
 export type StudyInput = {
@@ -35,6 +36,8 @@ function validate(input: StudyInput): string | null {
   if (input.steps.some((s) => !s.name.trim())) return 'Every step needs a name.'
   if (!(input.wageRate >= 0)) return 'Wage rate must be zero or more.'
   if (!(input.allowancePct >= 0 && input.allowancePct <= 100)) return 'Allowance must be between 0 and 100%.'
+  if (input.steps.some((s) => !(Number.isInteger(s.piecesPerCycle) && s.piecesPerCycle >= 1)))
+    return 'Pieces per cycle must be a whole number of at least 1.'
   return null
 }
 
@@ -70,6 +73,7 @@ export async function createStudy(input: StudyInput): Promise<ActionResult<{ id:
     notes: s.notes.trim() || null,
     timed: s.timed,
     position: i,
+    pieces_per_cycle: s.piecesPerCycle,
   }))
   const { error: stepsError } = await supabase.from('steps').insert(rows)
   if (stepsError) return { ok: false, error: stepsError.message }
@@ -118,6 +122,7 @@ export async function updateStudy(studyId: string, input: StudyInput): Promise<A
       notes: s.notes.trim() || null,
       timed: s.timed,
       position: i,
+      pieces_per_cycle: s.piecesPerCycle,
     }
     if (s.id && existingIds.has(s.id)) {
       const { error } = await supabase.from('steps').update(payload).eq('id', s.id)
@@ -173,7 +178,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
 
   const { data: steps, error: stepsError } = await supabase
     .from('steps')
-    .select('name, notes, timed, position')
+    .select('name, notes, timed, position, pieces_per_cycle')
     .eq('study_id', studyId)
     .order('position', { ascending: true })
   if (stepsError) return { ok: false, error: stepsError.message }

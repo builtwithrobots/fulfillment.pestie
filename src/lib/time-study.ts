@@ -36,6 +36,7 @@ export type StepWithObservations = {
   notes: string | null
   timed: boolean
   position: number
+  piecesPerCycle: number // finished pieces produced in one timed cycle (≥1)
   observations: Observation[] // oldest → newest
 }
 
@@ -76,9 +77,13 @@ export type StepResult = {
   obsCount: number
   recommendedObs: number | null // cycles for ±10% @ 95%; null when not estimable
   enoughObs: boolean
-  costPerUnit: number // standard time × wage
+  costPerUnit: number // standard time × wage (per cycle)
   pctOfTotal: number
   isBottleneck: boolean
+  piecesPerCycle: number // finished pieces per timed cycle (≥1)
+  perPieceMs: number // observed time per piece = avgMs / piecesPerCycle
+  piecesPerHour: number // throughput at this step (one station assumed)
+  costPerPiece: number // standard cost per piece = costPerUnit / piecesPerCycle
 }
 
 export type MasterStats = {
@@ -98,11 +103,17 @@ export type StudyResults = {
   documentedCount: number
   totalMs: number // observed cycle time (sum of observed step averages)
   totalStdMs: number // standard cycle time = totalMs × (1 + allowance)
-  totalCost: number // standard labor cost / unit
+  totalCost: number // standard labor cost / unit (per cycle)
   totalObs: number
   allowancePct: number
   bottleneck: StepResult | null
   master: MasterStats | null
+  totalPerPieceMs: number // observed labor time per finished piece
+  totalPerPieceStdMs: number // standard labor time per finished piece
+  costPerPiece: number // standard labor cost per finished piece
+  throughputPerHour: number // line output cap = slowest station's pieces/hour
+  throughputBottleneck: StepResult | null // the station that caps throughput
+  hasPieceCounts: boolean // any timed step produces >1 piece per cycle
 }
 
 /**
@@ -121,12 +132,36 @@ export function computeResults(
   const allowMult = 1 + (allowancePct || 0) / 100
 
   const timedWithObs = steps.filter((s) => s.timed && s.observations.length > 0)
-  const stepAverages = timedWithObs.map((s) => ({ id: s.id, avgMs: avgOf(s.observations.map((o) => o.durationMs)) }))
+  const stepAverages = timedWithObs.map((s) => ({
+    id: s.id,
+    avgMs: avgOf(s.observations.map((o) => o.durationMs)),
+    pieces: Math.max(1, s.piecesPerCycle || 1),
+  }))
 
   const totalMs = stepAverages.reduce((a, b) => a + b.avgMs, 0)
   const totalStdMs = totalMs * allowMult
   const totalCost = totalStdMs * wagePerMs
   const totalObs = timedWithObs.reduce((a, s) => a + s.observations.length, 0)
+
+  // Per-piece: normalize each step's time by its pieces/cycle so batch steps
+  // compare fairly and roll up to a true per-finished-piece labor cost.
+  const totalPerPieceMs = stepAverages.reduce((a, b) => a + b.avgMs / b.pieces, 0)
+  const totalPerPieceStdMs = totalPerPieceMs * allowMult
+  const costPerPiece = totalPerPieceStdMs * wagePerMs
+  const hasPieceCounts = steps.some((s) => s.timed && Math.max(1, s.piecesPerCycle || 1) > 1)
+
+  // Line throughput is capped by the slowest station in pieces/hour (one
+  // station per step assumed until operator counts land).
+  let throughputPerHour = 0
+  let throughputBottleneckId: string | null = null
+  for (const b of stepAverages) {
+    if (b.avgMs <= 0) continue
+    const pph = (b.pieces * 3_600_000) / b.avgMs
+    if (throughputBottleneckId === null || pph < throughputPerHour) {
+      throughputPerHour = pph
+      throughputBottleneckId = b.id
+    }
+  }
 
   const sorted = [...stepAverages].sort((a, b) => b.avgMs - a.avgMs)
   const bnCount = Math.max(1, Math.ceil(stepAverages.length * 0.2))
@@ -138,6 +173,7 @@ export function computeResults(
     const avgMs = avgOf(durations)
     const stdDevMs = sampleStdDev(durations, avgMs)
     const recommendedObs = recommendedCycles(obsCount, avgMs, stdDevMs)
+    const piecesPerCycle = Math.max(1, s.piecesPerCycle || 1)
     return {
       id: s.id,
       name: s.name,
@@ -153,11 +189,18 @@ export function computeResults(
       costPerUnit: avgMs * allowMult * wagePerMs,
       pctOfTotal: totalMs > 0 && s.timed && obsCount > 0 ? (avgMs / totalMs) * 100 : 0,
       isBottleneck: bottleneckIds.has(s.id),
+      piecesPerCycle,
+      perPieceMs: avgMs / piecesPerCycle,
+      piecesPerHour: avgMs > 0 ? (piecesPerCycle * 3_600_000) / avgMs : 0,
+      costPerPiece: (avgMs * allowMult * wagePerMs) / piecesPerCycle,
     }
   })
 
   const topId = sorted[0]?.id
   const bottleneck = stepAverages.length > 1 ? (results.find((r) => r.id === topId) ?? null) : null
+  const throughputBottleneck = throughputBottleneckId
+    ? (results.find((r) => r.id === throughputBottleneckId) ?? null)
+    : null
 
   let master: MasterStats | null = null
   if (masterRuns.length > 0) {
@@ -187,6 +230,12 @@ export function computeResults(
     allowancePct: allowancePct || 0,
     bottleneck,
     master,
+    totalPerPieceMs,
+    totalPerPieceStdMs,
+    costPerPiece,
+    throughputPerHour,
+    throughputBottleneck,
+    hasPieceCounts,
   }
 }
 
@@ -268,20 +317,22 @@ export function resultsToPlainText(
   text += `Date: ${new Date().toLocaleDateString()}\n`
   text += `Wage rate: $${wageRate}/hr\n`
   text += `PF&D allowance: ${allowancePct || 0}%\n\n`
-  text += 'Step\tType\tObs avg\tStd time\tStd dev\tCV%\tObs\tCost/Unit\n'
+  text += 'Step\tType\tObs avg\tStd time\tStd dev\tCV%\tObs\tPcs/cyc\tPcs/hr\tCost/piece\n'
   for (const s of steps) {
+    const pieces = Math.max(1, s.piecesPerCycle || 1)
     if (!s.timed) {
-      text += `${s.name}\tDocumented\t—\t—\t—\t—\t—\t—\n`
+      text += `${s.name}\tDocumented\t—\t—\t—\t—\t—\t—\t—\t—\n`
     } else if (s.observations.length === 0) {
-      text += `${s.name}\tTimed\tNo obs\t—\t—\t—\t0\t—\n`
+      text += `${s.name}\tTimed\tNo obs\t—\t—\t—\t0\t${pieces}\t—\t—\n`
     } else {
       const durations = s.observations.map((o) => o.durationMs)
       const avg = avgOf(durations)
       const sd = sampleStdDev(durations, avg)
       const std = avg * allowMult
-      const cost = std * wagePerMs
+      const costPiece = (std * wagePerMs) / pieces
       const cv = avg > 0 ? (sd / avg) * 100 : 0
-      text += `${s.name}\tTimed\t${fmtMs(avg)}\t${fmtMs(std)}\t${fmtMs(sd)}\t${cv.toFixed(1)}%\t${s.observations.length}\t${wageRate > 0 ? '$' + cost.toFixed(4) : '—'}\n`
+      const pph = avg > 0 ? Math.round((pieces * 3_600_000) / avg) : 0
+      text += `${s.name}\tTimed\t${fmtMs(avg)}\t${fmtMs(std)}\t${fmtMs(sd)}\t${cv.toFixed(1)}%\t${s.observations.length}\t${pieces}\t${pph}\t${wageRate > 0 ? '$' + costPiece.toFixed(4) : '—'}\n`
     }
   }
   if (masterRuns.length > 0) {
