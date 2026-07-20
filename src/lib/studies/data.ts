@@ -43,6 +43,7 @@ export type StudyDetail = {
   wageRate: number
   allowancePct: number
   useWholeTimer: boolean
+  isGroupCheck: boolean
   createdAt: string
   updatedAt: string
   steps: {
@@ -97,7 +98,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
 
   const { data: study, error } = await supabase
     .from('studies')
-    .select('id, title, wage_rate, allowance_pct, use_whole_timer, created_at, updated_at')
+    .select('id, title, wage_rate, allowance_pct, use_whole_timer, is_group_check, created_at, updated_at')
     .eq('id', studyId)
     .maybeSingle()
   if (error) throw error
@@ -116,6 +117,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
     wageRate: Number(study.wage_rate),
     allowancePct: Number(study.allowance_pct),
     useWholeTimer: study.use_whole_timer,
+    isGroupCheck: study.is_group_check,
     createdAt: study.created_at,
     updatedAt: study.updated_at,
     steps: (steps ?? []).map((s) => ({

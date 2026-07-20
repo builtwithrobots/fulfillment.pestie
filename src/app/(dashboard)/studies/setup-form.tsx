@@ -29,6 +29,7 @@ export type SetupInitial = {
   wageRate: number
   allowancePct: number
   useWholeTimer: boolean
+  isGroupCheck: boolean
   steps: { id: string; name: string; notes: string | null; timed: boolean; piecesPerCycle: number }[]
 }
 
@@ -44,6 +45,7 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
   const [wage, setWage] = useState(initial?.wageRate ? String(initial.wageRate) : '')
   const [allowance, setAllowance] = useState(initial?.allowancePct ? String(initial.allowancePct) : '')
   const [useWhole, setUseWhole] = useState(initial?.useWholeTimer ?? false)
+  const [isGroupCheck, setIsGroupCheck] = useState(initial?.isGroupCheck ?? false)
   const [steps, setSteps] = useState<BuilderStep[]>(
     () =>
       initial?.steps.map((s) => ({
@@ -97,6 +99,7 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
       wageRate: parseFloat(wage) || 0,
       allowancePct: parseFloat(allowance) || 0,
       useWholeTimer: useWhole,
+      isGroupCheck,
       steps: steps.map((s) => ({
         id: s.id,
         name: s.name,
@@ -304,6 +307,26 @@ export function SetupForm({ initial }: { initial?: SetupInitial }) {
         <p className="mt-2 text-xs text-zinc-500">
           Runs a single stopwatch alongside your step timers. Lets you capture total process time across multiple full
           runs, separately from individual step observations.
+        </p>
+      </Card>
+
+      {/* Group / process check */}
+      <Card className="mt-4">
+        <CardTitle>Group / process check</CardTitle>
+        <label className="mt-4 flex items-center gap-3">
+          <Switch
+            color="amber"
+            checked={isGroupCheck}
+            onChange={setIsGroupCheck}
+            aria-label="Mark as a group or process check"
+          />
+          <span className="text-sm text-zinc-700 dark:text-zinc-200">
+            Label who ran each step, but keep timings out of roster profiles
+          </span>
+        </label>
+        <p className="mt-2 text-xs text-zinc-500">
+          Turn on for a quick line/cycle check with different people on different steps. You still get a per-person
+          breakdown in this study — it just won&apos;t roll up into anyone&apos;s individual roster performance.
         </p>
       </Card>
 

@@ -18,6 +18,7 @@ export default async function EditStudyPage({ params }: { params: Promise<{ id: 
         wageRate: study.wageRate,
         allowancePct: study.allowancePct,
         useWholeTimer: study.useWholeTimer,
+        isGroupCheck: study.isGroupCheck,
         steps: study.steps.map((s) => ({
           id: s.id,
           name: s.name,

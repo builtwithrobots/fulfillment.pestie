@@ -27,6 +27,7 @@ export type StudyInput = {
   wageRate: number
   allowancePct: number
   useWholeTimer: boolean
+  isGroupCheck: boolean
   steps: StepInput[]
 }
 
@@ -62,6 +63,7 @@ export async function createStudy(input: StudyInput): Promise<ActionResult<{ id:
       wage_rate: input.wageRate,
       allowance_pct: input.allowancePct,
       use_whole_timer: input.useWholeTimer,
+      is_group_check: input.isGroupCheck,
     })
     .select('id')
     .single()
@@ -97,6 +99,7 @@ export async function updateStudy(studyId: string, input: StudyInput): Promise<A
       wage_rate: input.wageRate,
       allowance_pct: input.allowancePct,
       use_whole_timer: input.useWholeTimer,
+      is_group_check: input.isGroupCheck,
     })
     .eq('id', studyId)
   if (studyError) return { ok: false, error: studyError.message }
@@ -157,7 +160,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
 
   const { data: source, error } = await supabase
     .from('studies')
-    .select('title, wage_rate, allowance_pct, use_whole_timer')
+    .select('title, wage_rate, allowance_pct, use_whole_timer, is_group_check')
     .eq('id', studyId)
     .maybeSingle()
   if (error) return { ok: false, error: error.message }
@@ -171,6 +174,7 @@ export async function duplicateStudy(studyId: string): Promise<ActionResult<{ id
       wage_rate: source.wage_rate,
       allowance_pct: source.allowance_pct,
       use_whole_timer: source.use_whole_timer,
+      is_group_check: source.is_group_check,
     })
     .select('id')
     .single()

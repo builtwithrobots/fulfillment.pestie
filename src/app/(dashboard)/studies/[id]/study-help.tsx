@@ -41,8 +41,10 @@ export function StudyHelp() {
             </p>
             <p className="mt-1.5">
               Pick who you&apos;re observing in the <em>Timing</em> selector so recordings land on their roster profile.
-              If different people run different steps at the same time, use the small selector on each step card to
-              attribute that step&apos;s timings to the right person.
+              If different people run different steps at the same time, use the small selector on each step card (or the
+              per-step list in the Cycle card) to attribute that step&apos;s timings to the right person. For a quick
+              line/cycle check, turn on <em>Group / process check</em> in setup — you still see who did what in this
+              study, but it won&apos;t roll up to anyone&apos;s roster profile.
             </p>
             <p className="mt-1.5">
               Timing a multi-step process as one flow? Switch to <em>Cycle</em> mode and tap through the steps in order
