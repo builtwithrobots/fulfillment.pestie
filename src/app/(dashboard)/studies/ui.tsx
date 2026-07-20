@@ -1,5 +1,7 @@
 import clsx from 'clsx'
 
+import { InfoModal } from './info-modal'
+
 /**
  * Small presentational primitives shared across the Time Study screens. Uses
  * the app's global Catalyst zinc/blue theme (light + dark) — not the original
@@ -27,10 +29,30 @@ export function CardTitle({ className, ...props }: React.ComponentPropsWithoutRe
   )
 }
 
-/** Small mono KPI tile used on the results and roster-profile screens. */
-export function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
+/**
+ * Small mono KPI tile used on the results and roster-profile screens. Pass
+ * `info` to show a top-right icon that opens a concise explanation modal.
+ */
+export function Stat({
+  label,
+  value,
+  tone,
+  info,
+}: {
+  label: string
+  value: string
+  tone?: string
+  info?: React.ReactNode
+}) {
   return (
-    <div className="rounded-lg bg-zinc-50 p-4 text-center ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10">
+    <div className="relative rounded-lg bg-zinc-50 p-4 text-center ring-1 ring-zinc-950/5 dark:bg-white/5 dark:ring-white/10">
+      {info && (
+        <span className="absolute top-1.5 right-1.5">
+          <InfoModal title={label} triggerLabel={`How ${label} is calculated`}>
+            {info}
+          </InfoModal>
+        </span>
+      )}
       <div className={`font-mono text-xl font-bold tabular-nums ${tone ?? 'text-zinc-950 dark:text-white'}`}>
         {value}
       </div>

@@ -21,7 +21,7 @@ export default async function ResultsPrintPage({ params }: { params: Promise<{ i
     <PrintView
       study={data.study}
       steps={data.steps}
-      masterRuns={data.study.useWholeTimer ? data.masterRuns : []}
+      masterRuns={data.masterRuns}
       workerNames={Object.fromEntries(names)}
     />
   )
