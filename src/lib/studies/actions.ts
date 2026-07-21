@@ -266,3 +266,18 @@ export async function recordMasterRun(
 
   return { ok: true, data: { id: data.id } }
 }
+
+/**
+ * Delete one master (full-process) run — for removing a mis-timed run that is
+ * skewing the averages/spread. Scoped to the study; revalidates the results so
+ * the recomputed stats appear immediately.
+ */
+export async function deleteMasterRun(studyId: string, runId: string): Promise<ActionResult> {
+  await requireUserId()
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase.from('master_runs').delete().eq('id', runId).eq('study_id', studyId)
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/studies/${studyId}/results`)
+  revalidatePath(`/studies/${studyId}/results/print`)
+  return { ok: true }
+}

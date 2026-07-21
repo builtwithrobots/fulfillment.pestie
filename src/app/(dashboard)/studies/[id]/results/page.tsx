@@ -10,6 +10,7 @@ import { computePerWorker, computeResults, fmtMs, resultsToPlainText } from '@/l
 import { InfoModal } from '../../info-modal'
 import { Card, CardTitle, Stat } from '../../ui'
 import { CopyResultsButton } from './copy-button'
+import { DeleteRunButton } from './delete-run-button'
 
 export const metadata = { title: 'Results' }
 
@@ -215,21 +216,27 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
             />
           </div>
           <ul className="mt-3 space-y-1.5">
-            {r.master.runs.map((ms, i) => {
+            {masterRuns.map((run, i) => {
+              const ms = run.durationMs
               const tag =
-                r.master!.runs.length > 1 && ms === r.master!.minMs
+                masterRuns.length > 1 && ms === r.master!.minMs
                   ? '✓ Fastest'
-                  : r.master!.runs.length > 1 && ms === r.master!.maxMs
+                  : masterRuns.length > 1 && ms === r.master!.maxMs
                     ? '⚠ Slowest'
                     : ''
               return (
                 <li
-                  key={i}
-                  className="grid grid-cols-[1fr_auto_5.5rem] items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-white/5"
+                  key={run.id ?? i}
+                  className="grid grid-cols-[1fr_auto_5rem_auto] items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-white/5"
                 >
                   <span className="text-zinc-500">Run {i + 1}</span>
                   <span className="text-right font-mono font-semibold tabular-nums">{fmtMs(ms)}</span>
                   <span className="text-right text-xs text-zinc-500">{tag}</span>
+                  {run.id ? (
+                    <DeleteRunButton studyId={study.id} runId={run.id} label={`Run ${i + 1}`} time={fmtMs(ms)} />
+                  ) : (
+                    <span className="w-6" />
+                  )}
                 </li>
               )
             })}
