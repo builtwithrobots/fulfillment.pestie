@@ -1,3 +1,4 @@
+import { ChevronDown, QrCode } from 'lucide-react'
 import { QRCodeSVG } from 'qrcode.react'
 
 import { InstallButton } from './install-button'
@@ -13,12 +14,17 @@ import { InstallButton } from './install-button'
  * production) with no hardcoded domain and no client-only window read. Users
  * "Add to Home Screen" from there (it is an installable PWA). The QR is always
  * dark-on-white regardless of theme so it stays scannable.
+ *
+ * Layout: the install button stays visible. The QR is a device-handoff aid --
+ * redundant when you're already on the phone -- so it rolls up behind a
+ * disclosure on mobile (where sidebar space is tight) and shows inline on
+ * desktop, where there's room to scan it with a phone.
  */
 export function InstallQR({ origin }: { origin: string }) {
   const url = origin ? `${origin}/` : ''
 
-  return (
-    <div className="flex flex-col items-center gap-2 py-1">
+  const qr = (
+    <div className="flex flex-col items-center gap-2">
       <div className="rounded-lg bg-white p-2 ring-1 ring-zinc-950/10">
         {url ? (
           <QRCodeSVG value={url} size={112} marginSize={0} className="h-28 w-28" />
@@ -27,10 +33,26 @@ export function InstallQR({ origin }: { origin: string }) {
         )}
       </div>
       <span className="text-center text-xs text-zinc-500">Scan to open the dashboard on your phone</span>
+    </div>
+  )
+
+  return (
+    <div className="flex flex-col gap-2 py-1">
       {/* One-tap install on this device (Android/desktop prompt; iOS shows steps). */}
-      <div className="w-full">
-        <InstallButton />
-      </div>
+      <InstallButton />
+
+      {/* Mobile: QR collapsed behind a tap-to-expand disclosure. */}
+      <details className="group lg:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-zinc-500 select-none hover:text-zinc-700 [&::-webkit-details-marker]:hidden dark:hover:text-zinc-300">
+          <QrCode className="size-3.5" />
+          Show QR code
+          <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-2">{qr}</div>
+      </details>
+
+      {/* Desktop: QR shown inline (room to scan with a phone). */}
+      <div className="hidden lg:block">{qr}</div>
     </div>
   )
 }

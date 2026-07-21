@@ -410,8 +410,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
           </tbody>
         </table>
         <p className="mt-3 text-xs text-zinc-500">
-          <span className="font-medium">Consistency</span> is each step&apos;s coefficient of variation (spread ÷
-          average) across its readings — under 10% is steady, over 25% is erratic.{' '}
+          <span className="font-medium">Consistency</span>{' '}
+          is each step&apos;s coefficient of variation (spread ÷ average) across its readings — under 10% is steady, over
+          25% is erratic.{' '}
           <span className="font-medium">(+N)</span> flags about how many more cycles are recommended to pin the average
           down (±10% at 95% confidence); <span className="text-emerald-600 dark:text-emerald-400">✓</span> means enough.
         </p>
