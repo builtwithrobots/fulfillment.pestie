@@ -4,7 +4,8 @@ import { AlertCircle, Loader2, RefreshCw, Sparkles } from 'lucide-react'
 import { useState, useTransition } from 'react'
 
 import { Button } from '@/components/button'
-import { analyzeStudy, type StudyAnalysis } from '@/lib/studies/analyze'
+import { analyzeStudy } from '@/lib/studies/analyze'
+import type { StudyAnalysis } from '@/lib/time-study'
 
 /** Short human date for the "Generated …" stamp (deterministic — safe in render). */
 function fmtDate(iso: string): string {

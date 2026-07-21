@@ -21,8 +21,6 @@ import { getStudyWithObservations, requireUserId } from './data'
  * deterministic bottleneck summary.
  */
 
-export type { StudyAnalysis }
-
 // Best available model for this reasoning task. Not user-configurable here.
 const MODEL = 'claude-opus-4-8'
 
