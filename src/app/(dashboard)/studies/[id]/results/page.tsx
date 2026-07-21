@@ -1,4 +1,4 @@
-import { Plus, Printer, StickyNote } from 'lucide-react'
+import { Plus, Printer, Sparkles, StickyNote } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
@@ -6,13 +6,18 @@ import { Button } from '@/components/button'
 import { Heading } from '@/components/heading'
 import { workerNameMap } from '@/lib/roster/data'
 import { getStudyWithObservations } from '@/lib/studies/data'
-import { computePerWorker, computeResults, fmtMs, resultsToPlainText } from '@/lib/time-study'
+import { computePerWorker, computeResults, fmtMs, resultsToPlainText, type StepResult } from '@/lib/time-study'
 import { InfoModal } from '../../info-modal'
 import { Card, CardTitle, Stat } from '../../ui'
+import { AiAnalysis } from './ai-analysis'
 import { CopyResultsButton } from './copy-button'
 import { DeleteRunButton } from './delete-run-button'
 
 export const metadata = { title: 'Results' }
+
+// Allow headroom for the on-demand AI analysis server action (a streamed Claude
+// call with thinking) invoked from this route; page render itself is fast.
+export const maxDuration = 60
 
 function money(v: number, wage: number) {
   return wage > 0 ? `$${v.toFixed(4)}` : '—'
@@ -51,6 +56,51 @@ const CONSISTENCY_BANDS = [
 
 function bandFor(cvPct: number) {
   return CONSISTENCY_BANDS.find((b) => cvPct <= b.max) ?? CONSISTENCY_BANDS[2]
+}
+
+// Plain-language reliability badge for a step. It folds the two things that
+// decide "can I trust this step's average?" — how tightly the readings cluster
+// (coefficient of variation) and whether there are enough of them — into one
+// word, so the table stays readable. The underlying numbers (spread, sample
+// count, recommendation) live behind the badge's tap-to-open explanation.
+type Reliability = {
+  label: string
+  dot: string // colour of the status dot
+  pill: string // pill background + text colour
+  plain: string // one-line meaning, jargon-free
+}
+
+function reliabilityFor(s: StepResult): Reliability {
+  if (s.obsCount < 2) {
+    return {
+      label: 'Building',
+      dot: 'bg-zinc-400',
+      pill: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-300',
+      plain: 'Not enough readings yet — time this step a few more times before trusting the average.',
+    }
+  }
+  if (s.cvPct > 25) {
+    return {
+      label: 'Low confidence',
+      dot: 'bg-red-500',
+      pill: 'bg-red-500/15 text-red-700 dark:text-red-400',
+      plain: "Readings swing a lot from cycle to cycle, so the average isn't dependable yet. Look for method differences, interruptions, or mixed operators.",
+    }
+  }
+  if (s.cvPct > 10 || !s.enoughObs) {
+    return {
+      label: 'Rough',
+      dot: 'bg-amber-500',
+      pill: 'bg-amber-400/15 text-amber-700 dark:text-amber-400',
+      plain: 'Close, but with some cycle-to-cycle variation. A few more readings will tighten the average.',
+    }
+  }
+  return {
+    label: 'Solid',
+    dot: 'bg-emerald-500',
+    pill: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
+    plain: "Readings are tight and there are enough of them — you can trust this step's average.",
+  }
 }
 
 export default async function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -284,8 +334,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
             <tr className="border-b border-zinc-950/10 text-left text-[11px] tracking-wide text-zinc-500 uppercase dark:border-white/10">
               <th className="py-2 pr-3 font-medium">Step</th>
               <th className="py-2 pr-3 font-medium">Avg time</th>
-              <th className="py-2 pr-3 font-medium">Consistency</th>
-              <th className="py-2 pr-3 font-medium">Obs</th>
+              <th className="py-2 pr-3 font-medium">Reliability</th>
               <th className="py-2 pr-3 font-medium">Cost/unit</th>
               <th className="py-2 font-medium">% of total</th>
             </tr>
@@ -314,7 +363,6 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5 pr-3">—</td>
-                    <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5">—</td>
                   </tr>
                 )
@@ -337,7 +385,6 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                     </td>
                     <td className="py-2.5 pr-3 text-zinc-400">No obs</td>
                     <td className="py-2.5 pr-3 text-zinc-400">—</td>
-                    <td className="py-2.5 pr-3">0</td>
                     <td className="py-2.5 pr-3">—</td>
                     <td className="py-2.5">—</td>
                   </tr>
@@ -373,34 +420,55 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                   </td>
                   <td className="py-2.5 pr-3 font-mono tabular-nums">{fmtMs(s.avgMs)}</td>
                   <td className="py-2.5 pr-3">
-                    {s.obsCount < 2 ? (
-                      <span className="text-zinc-400">—</span>
-                    ) : (
-                      <span
-                        className={
-                          s.cvPct <= 10
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : s.cvPct <= 25
-                              ? 'text-amber-600 dark:text-amber-400'
-                              : 'text-red-600 dark:text-red-400'
-                        }
-                        title={`Std dev ${fmtMs(s.stdDevMs)} across ${s.obsCount} readings`}
-                      >
-                        {s.cvPct.toFixed(0)}% CV
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    {s.obsCount}
-                    {s.recommendedObs != null && !s.enoughObs && (
-                      <span
-                        className="ml-1 text-xs text-amber-600 dark:text-amber-400"
-                        title={`About ${s.recommendedObs} cycles recommended for ±10% at 95% confidence`}
-                      >
-                        (+{Math.max(1, s.recommendedObs - s.obsCount)})
-                      </span>
-                    )}
-                    {s.enoughObs && <span className="ml-1 text-xs text-emerald-600 dark:text-emerald-400">✓</span>}
+                    {(() => {
+                      const rel = reliabilityFor(s)
+                      const moreNeeded =
+                        s.recommendedObs != null && !s.enoughObs ? Math.max(1, s.recommendedObs - s.obsCount) : 0
+                      return (
+                        <InfoModal
+                          title={`Reliability — ${s.name}`}
+                          triggerLabel={`Reliability detail for ${s.name}`}
+                          triggerClassName="inline-flex"
+                          icon={
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${rel.pill}`}
+                            >
+                              <span className={`size-1.5 rounded-full ${rel.dot}`} />
+                              {rel.label}
+                            </span>
+                          }
+                        >
+                          <div className="space-y-3">
+                            <p>{rel.plain}</p>
+                            <dl className="space-y-1.5 text-[13px]">
+                              <div className="flex justify-between gap-4">
+                                <dt className="text-zinc-500">Average time</dt>
+                                <dd className="font-mono tabular-nums">{fmtMs(s.avgMs)}</dd>
+                              </div>
+                              {s.obsCount >= 2 && (
+                                <div className="flex justify-between gap-4">
+                                  <dt className="text-zinc-500">Typical swing</dt>
+                                  <dd className="font-mono tabular-nums">
+                                    ± {fmtMs(s.stdDevMs)} ({s.cvPct.toFixed(0)}%)
+                                  </dd>
+                                </div>
+                              )}
+                              <div className="flex justify-between gap-4">
+                                <dt className="text-zinc-500">Readings taken</dt>
+                                <dd className="font-mono tabular-nums">{s.obsCount}</dd>
+                              </div>
+                            </dl>
+                            <p className="text-[13px]">
+                              {s.enoughObs
+                                ? 'Enough readings for a confident average (±10% at 95% confidence).'
+                                : moreNeeded > 0
+                                  ? `About ${moreNeeded} more reading${moreNeeded === 1 ? '' : 's'} recommended to pin the average down (±10% at 95% confidence).`
+                                  : 'Time this step a few more times to gauge how steady it is.'}
+                            </p>
+                          </div>
+                        </InfoModal>
+                      )
+                    })()}
                   </td>
                   <td className="py-2.5 pr-3 font-mono tabular-nums">{money(s.costPerUnit, wage)}</td>
                   <td className="py-2.5">{s.pctOfTotal.toFixed(1)}%</td>
@@ -410,11 +478,11 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
           </tbody>
         </table>
         <p className="mt-3 text-xs text-zinc-500">
-          <span className="font-medium">Consistency</span>{' '}
-          is each step&apos;s coefficient of variation (spread ÷ average) across its readings — under 10% is steady, over
-          25% is erratic.{' '}
-          <span className="font-medium">(+N)</span> flags about how many more cycles are recommended to pin the average
-          down (±10% at 95% confidence); <span className="text-emerald-600 dark:text-emerald-400">✓</span> means enough.
+          <span className="font-medium">Reliability</span> blends how steady a step is with how many times it&apos;s been
+          timed — <span className="text-emerald-600 dark:text-emerald-400">Solid</span>,{' '}
+          <span className="text-amber-600 dark:text-amber-400">Rough</span>, or{' '}
+          <span className="text-red-600 dark:text-red-400">Low confidence</span>. Tap any badge for the exact spread,
+          readings, and how many more are recommended.
         </p>
       </Card>
 
@@ -509,16 +577,33 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
         </Card>
       )}
 
-      {/* Bottleneck insight */}
-      {r.bottleneck && (
-        <Card className="mt-4 bg-amber-50/50 ring-amber-500/30 dark:bg-amber-500/5 dark:ring-amber-400/20">
-          <CardTitle className="text-amber-700 dark:text-amber-400">Bottleneck identified</CardTitle>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">
-            &ldquo;{r.bottleneck.name}&rdquo; is your biggest bottleneck — averaging {fmtMs(r.bottleneck.avgMs)} (
-            {r.bottleneck.pctOfTotal.toFixed(1)}% of timed cycle time
-            {wage > 0 ? `, costing ${money(r.bottleneck.costPerUnit, wage)} per unit` : ''}). Focus improvement efforts
-            here first for the highest impact on throughput.
-          </p>
+      {/* Analysis & recommendations — on-demand AI read, with the deterministic
+          bottleneck line as the always-on quick take / fallback. */}
+      {(chartSteps.length > 0 || !!r.master) && (
+        <Card className="mt-4 bg-violet-50/40 ring-violet-500/25 dark:bg-violet-500/5 dark:ring-violet-400/20">
+          <CardTitle className="flex items-center gap-1.5 text-violet-700 dark:text-violet-400">
+            <Sparkles className="size-3.5" /> Analysis &amp; recommendations
+          </CardTitle>
+          <div className="mt-3">
+            <AiAnalysis
+              studyId={study.id}
+              fallback={
+                r.bottleneck ? (
+                  <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">
+                    &ldquo;{r.bottleneck.name}&rdquo; is your biggest bottleneck — averaging {fmtMs(r.bottleneck.avgMs)} (
+                    {r.bottleneck.pctOfTotal.toFixed(1)}% of timed cycle time
+                    {wage > 0 ? `, costing ${money(r.bottleneck.costPerUnit, wage)} per unit` : ''}). Focus improvement
+                    efforts here first for the highest impact on throughput.
+                  </p>
+                ) : (
+                  <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">
+                    Timings are captured above. Run an AI analysis for a plain-English read of where the process stands
+                    and what to tackle next.
+                  </p>
+                )
+              }
+            />
+          </div>
         </Card>
       )}
 
