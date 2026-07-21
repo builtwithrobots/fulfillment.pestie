@@ -111,12 +111,34 @@ function reliabilityFor(s: StepResult): Reliability {
   }
 }
 
+// Plain "why it's rated this" sentence, tied to the step's actual spread and the
+// same 10% / 25% thresholds the badge uses — so tapping the label explains the
+// rating, not just restates it. Mirrors reliabilityFor's branches exactly.
+function whyReliability(s: StepResult): string {
+  if (s.obsCount < 2) {
+    return `only ${s.obsCount} reading${s.obsCount === 1 ? '' : 's'} so far — at least 2 are needed to measure how much the step varies.`
+  }
+  const cv = s.cvPct.toFixed(0)
+  if (s.cvPct > 25) {
+    return `the readings vary ${cv}% around the average — past the 25% mark, so the average isn't dependable yet.`
+  }
+  if (s.cvPct > 10) {
+    return `the readings vary ${cv}% around the average — above the 10% "steady" line but under 25%.`
+  }
+  if (!s.enoughObs) {
+    return `the readings are tight (${cv}%), but there aren't quite enough of them yet to lock in the average.`
+  }
+  return `the readings are tight (${cv}%, under the 10% "steady" line) and there are enough of them.`
+}
+
 export default async function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [data, workerNames] = await Promise.all([getStudyWithObservations(id), workerNameMap()])
   if (!data) notFound()
 
   const { study, steps, masterRuns } = data
+  // Raw readings per step id, so the reliability popup can show the actual times.
+  const obsByStepId = new Map(steps.map((st) => [st.id, st.observations]))
   const wage = study.wageRate
   const allowance = study.allowancePct
   const r = computeResults(steps, wage, masterRuns, allowance)
@@ -432,6 +454,10 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                       const rel = reliabilityFor(s)
                       const moreNeeded =
                         s.recommendedObs != null && !s.enoughObs ? Math.max(1, s.recommendedObs - s.obsCount) : 0
+                      const readings = obsByStepId.get(s.id) ?? []
+                      const durations = readings.map((o) => o.durationMs)
+                      const minMs = durations.length ? Math.min(...durations) : 0
+                      const maxMs = durations.length ? Math.max(...durations) : 0
                       return (
                         <InfoModal
                           title={`Reliability — ${s.name}`}
@@ -448,6 +474,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                         >
                           <div className="space-y-3">
                             <p>{rel.plain}</p>
+                            <p className="rounded-md bg-zinc-100/80 px-2.5 py-2 text-[13px] dark:bg-white/5">
+                              <span className="font-medium">Why {rel.label}:</span> {whyReliability(s)}
+                            </p>
                             <dl className="space-y-1.5 text-[13px]">
                               <div className="flex justify-between gap-4">
                                 <dt className="text-zinc-500">Average time</dt>
@@ -466,6 +495,44 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                                 <dd className="font-mono tabular-nums">{s.obsCount}</dd>
                               </div>
                             </dl>
+                            {readings.length > 0 && (
+                              <div>
+                                <div className="text-[11px] font-medium tracking-wide text-zinc-500 uppercase">
+                                  Actual readings ({readings.length})
+                                </div>
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {readings.map((o, i) => {
+                                    const isMin = durations.length > 1 && o.durationMs === minMs
+                                    const isMax = durations.length > 1 && o.durationMs === maxMs && !isMin
+                                    return (
+                                      <span
+                                        key={o.id ?? i}
+                                        title={isMin ? 'Fastest' : isMax ? 'Slowest' : undefined}
+                                        className={`rounded px-1.5 py-0.5 font-mono text-xs tabular-nums ${
+                                          isMin
+                                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                                            : isMax
+                                              ? 'bg-amber-400/15 text-amber-700 dark:text-amber-400'
+                                              : 'bg-zinc-100 text-zinc-600 dark:bg-white/5 dark:text-zinc-300'
+                                        }`}
+                                      >
+                                        {fmtMs(o.durationMs)}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                                {durations.length > 1 && minMs !== maxMs && (
+                                  <div className="mt-1.5 flex gap-3 text-[11px] text-zinc-400">
+                                    <span className="inline-flex items-center gap-1">
+                                      <span className="size-2 rounded-full bg-emerald-500" /> fastest
+                                    </span>
+                                    <span className="inline-flex items-center gap-1">
+                                      <span className="size-2 rounded-full bg-amber-500" /> slowest
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                             <p className="text-[13px]">
                               {s.enoughObs
                                 ? `Enough readings for a confident average (${SAMPLE_TARGET_LABEL}).`
