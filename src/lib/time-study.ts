@@ -40,6 +40,19 @@ export type StepWithObservations = {
   observations: Observation[] // oldest → newest
 }
 
+/**
+ * AI-generated read of a study — a plain-language summary plus concrete
+ * recommendations. Persisted on the study (studies.ai_analysis) once run, shown
+ * on the results screen, and included in the PDF export. Lives here (pure,
+ * isomorphic) so the client component, the server action, and the server-only
+ * data layer can all share the type without a circular import.
+ */
+export type StudyAnalysis = {
+  summary: string
+  recommendations: { title: string; detail: string }[]
+  generatedAt?: string // ISO timestamp set when the analysis was generated
+}
+
 // Sample-size guidance. Cycles needed to estimate the mean within ±PRECISION at
 // CONFIDENCE, from the observed spread: n = (z·s / (k·x̄))² = (z/k)²·CV². Because
 // required readings grow with the SQUARE of a step's spread, the target is set to

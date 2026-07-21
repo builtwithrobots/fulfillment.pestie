@@ -597,6 +597,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
           <div className="mt-3">
             <AiAnalysis
               studyId={study.id}
+              initial={study.aiAnalysis}
               fallback={
                 r.bottleneck ? (
                   <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-200">
@@ -619,10 +620,10 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
 
       <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <CopyResultsButton text={copyText} />
-        <Button outline href={`/studies/${study.id}/results/print`} target="_blank">
+        <Button color="green" href={`/studies/${study.id}/results/print`} target="_blank">
           <Printer className="size-4" /> Export PDF
         </Button>
-        <Button plain href="/studies/new">
+        <Button outline href="/studies/new">
           <Plus className="size-4" /> New study
         </Button>
       </div>

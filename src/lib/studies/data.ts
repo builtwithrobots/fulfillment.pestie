@@ -4,7 +4,7 @@ import { auth } from '@clerk/nextjs/server'
 
 import { AUTH_ENABLED } from '@/lib/auth-config'
 import { createServiceRoleClient } from '@/lib/supabase/server'
-import type { Observation, StepWithObservations } from '@/lib/time-study'
+import type { Observation, StepWithObservations, StudyAnalysis } from '@/lib/time-study'
 
 /**
  * Server data layer for the Time Study Tool.
@@ -44,6 +44,7 @@ export type StudyDetail = {
   allowancePct: number
   useWholeTimer: boolean
   isGroupCheck: boolean
+  aiAnalysis: StudyAnalysis | null
   createdAt: string
   updatedAt: string
   steps: {
@@ -98,7 +99,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
 
   const { data: study, error } = await supabase
     .from('studies')
-    .select('id, title, wage_rate, allowance_pct, use_whole_timer, is_group_check, created_at, updated_at')
+    .select('id, title, wage_rate, allowance_pct, use_whole_timer, is_group_check, ai_analysis, created_at, updated_at')
     .eq('id', studyId)
     .maybeSingle()
   if (error) throw error
@@ -118,6 +119,7 @@ export async function getStudy(studyId: string): Promise<StudyDetail | null> {
     allowancePct: Number(study.allowance_pct),
     useWholeTimer: study.use_whole_timer,
     isGroupCheck: study.is_group_check,
+    aiAnalysis: study.ai_analysis ?? null,
     createdAt: study.created_at,
     updatedAt: study.updated_at,
     steps: (steps ?? []).map((s) => ({

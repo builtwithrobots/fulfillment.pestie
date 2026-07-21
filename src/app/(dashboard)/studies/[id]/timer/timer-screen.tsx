@@ -17,13 +17,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
-import { Heading } from '@/components/heading'
 import { Input } from '@/components/input'
 import { Select } from '@/components/select'
 import { createRosterWorker } from '@/lib/roster/actions'
 import { deleteObservation, recordMasterRun, recordObservation } from '@/lib/studies/actions'
 import { fmtMs, type Observation, type StepWithObservations } from '@/lib/time-study'
 import { Card, CardTitle } from '../../ui'
+import { TimerTitleEditor } from './title-editor'
 
 type LiveStep = StepWithObservations & { startTs: number | null }
 type WorkerOption = { id: string; fullName: string }
@@ -359,7 +359,7 @@ export function TimerScreen({
     <div className="mx-auto max-w-3xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Heading>{title}</Heading>
+          <TimerTitleEditor studyId={studyId} initialTitle={title} />
           <div className="mt-1">
             <Badge color="blue">{badge}</Badge>
           </div>

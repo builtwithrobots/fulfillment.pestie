@@ -143,6 +143,32 @@ export async function updateStudy(studyId: string, input: StudyInput): Promise<A
   return { ok: true }
 }
 
+/**
+ * Title-only rename, used by the lock/unlock title editor on the timer screen.
+ * Unlike updateStudy it does not require the full study payload (steps, wage,
+ * flags), so a quick rename never has to round-trip — or risk clobbering — the
+ * rest of the study.
+ */
+export async function updateStudyTitle(studyId: string, title: string): Promise<ActionResult> {
+  await requireUserId()
+  const next = title.trim()
+  if (!next) return { ok: false, error: 'Please enter a study title.' }
+  if (next.length > 80) return { ok: false, error: 'Title must be 80 characters or fewer.' }
+
+  const supabase = createServiceRoleClient()
+  if (!(await assertExists(supabase, studyId))) return { ok: false, error: 'Study not found.' }
+
+  const { error } = await supabase.from('studies').update({ title: next }).eq('id', studyId)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath('/studies')
+  revalidatePath(`/studies/${studyId}/setup`)
+  revalidatePath(`/studies/${studyId}/timer`)
+  revalidatePath(`/studies/${studyId}/results`)
+  revalidatePath(`/studies/${studyId}/results/print`)
+  return { ok: true }
+}
+
 export async function deleteStudy(studyId: string): Promise<ActionResult> {
   await requireUserId()
   const supabase = createServiceRoleClient()

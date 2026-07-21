@@ -6,15 +6,29 @@ import { useState, useTransition } from 'react'
 import { Button } from '@/components/button'
 import { analyzeStudy, type StudyAnalysis } from '@/lib/studies/analyze'
 
+/** Short human date for the "Generated …" stamp (deterministic — safe in render). */
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 /**
  * On-demand "Analyze with AI" control that sits where the deterministic
- * bottleneck summary used to. Until the user runs it, the `fallback` (the
- * quick deterministic take) is shown so the card is never empty and no paid
- * call is made. Running it streams the computed results to Claude and swaps in
- * a plain-English summary plus concrete recommendations.
+ * bottleneck summary used to. A previously saved analysis is passed as
+ * `initial` and shown right away (no re-run, no new call); otherwise the
+ * `fallback` (the quick deterministic take) shows until the user runs it.
+ * Running it streams the computed results to Claude, persists them on the
+ * study, and swaps in a plain-English summary plus concrete recommendations.
  */
-export function AiAnalysis({ studyId, fallback }: { studyId: string; fallback: React.ReactNode }) {
-  const [result, setResult] = useState<StudyAnalysis | null>(null)
+export function AiAnalysis({
+  studyId,
+  fallback,
+  initial,
+}: {
+  studyId: string
+  fallback: React.ReactNode
+  initial?: StudyAnalysis | null
+}) {
+  const [result, setResult] = useState<StudyAnalysis | null>(initial ?? null)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -60,7 +74,10 @@ export function AiAnalysis({ studyId, fallback }: { studyId: string; fallback: R
             {pending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
             {pending ? 'Analyzing…' : 'Re-run analysis'}
           </button>
-          <span className="text-xs text-zinc-400">AI-generated — sanity-check against the numbers above.</span>
+          <span className="text-xs text-zinc-400">
+            {result.generatedAt ? `Generated ${fmtDate(result.generatedAt)} · ` : ''}AI-generated — sanity-check
+            against the numbers above.
+          </span>
         </div>
       </div>
     )
