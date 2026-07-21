@@ -3,7 +3,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 import type { ActionResult } from '@/lib/action-result'
-import { computeResults, fmtMs, type StudyResults } from '@/lib/time-study'
+import { computeResults, fmtMs, RECOMMENDED_OBS_CAP, type StudyResults } from '@/lib/time-study'
 import { getStudyWithObservations, requireUserId } from './data'
 
 /**
@@ -89,7 +89,9 @@ function buildPrompt(title: string, isGroupCheck: boolean, wage: number, r: Stud
       const enough =
         s.enoughObs || s.recommendedObs == null
           ? 'enough readings'
-          : `timed ${s.obsCount}×, ~${Math.max(1, s.recommendedObs - s.obsCount)} more recommended`
+          : s.recommendedObs > RECOMMENDED_OBS_CAP
+            ? `timed ${s.obsCount}×, too variable to pin down by timing — needs method standardization`
+            : `timed ${s.obsCount}×, ~${Math.max(1, s.recommendedObs - s.obsCount)} more recommended`
       lines.push(
         `- ${s.name}: avg ${fmtMs(s.avgMs)}, ${s.pctOfTotal.toFixed(0)}% of cycle, cost/unit ${fmtMoney(
           s.costPerUnit,

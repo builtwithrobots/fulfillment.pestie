@@ -6,7 +6,15 @@ import { Button } from '@/components/button'
 import { Heading } from '@/components/heading'
 import { workerNameMap } from '@/lib/roster/data'
 import { getStudyWithObservations } from '@/lib/studies/data'
-import { computePerWorker, computeResults, fmtMs, resultsToPlainText, type StepResult } from '@/lib/time-study'
+import {
+  computePerWorker,
+  computeResults,
+  fmtMs,
+  RECOMMENDED_OBS_CAP,
+  resultsToPlainText,
+  SAMPLE_TARGET_LABEL,
+  type StepResult,
+} from '@/lib/time-study'
 import { InfoModal } from '../../info-modal'
 import { Card, CardTitle, Stat } from '../../ui'
 import { AiAnalysis } from './ai-analysis'
@@ -460,10 +468,12 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
                             </dl>
                             <p className="text-[13px]">
                               {s.enoughObs
-                                ? 'Enough readings for a confident average (±10% at 95% confidence).'
-                                : moreNeeded > 0
-                                  ? `About ${moreNeeded} more reading${moreNeeded === 1 ? '' : 's'} recommended to pin the average down (±10% at 95% confidence).`
-                                  : 'Time this step a few more times to gauge how steady it is.'}
+                                ? `Enough readings for a confident average (${SAMPLE_TARGET_LABEL}).`
+                                : s.recommendedObs != null && s.recommendedObs > RECOMMENDED_OBS_CAP
+                                  ? 'This step swings too much to pin down by timing alone — standardize the method (fixed station, one operator, remove interruptions), then re-time.'
+                                  : moreNeeded > 0
+                                    ? `About ${moreNeeded} more reading${moreNeeded === 1 ? '' : 's'} recommended to pin the average down (${SAMPLE_TARGET_LABEL}).`
+                                    : 'Time this step a few more times to gauge how steady it is.'}
                             </p>
                           </div>
                         </InfoModal>

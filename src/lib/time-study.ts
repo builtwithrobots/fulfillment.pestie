@@ -41,10 +41,23 @@ export type StepWithObservations = {
 }
 
 // Sample-size guidance. Cycles needed to estimate the mean within ±PRECISION at
-// CONFIDENCE, from the observed spread: n = (z·s / (k·x̄))² = (z/k)²·CV². 95%
-// confidence with ±10% precision is a common shop-floor target.
-export const SAMPLE_CONFIDENCE_Z = 1.96
-export const SAMPLE_PRECISION_K = 0.1
+// CONFIDENCE, from the observed spread: n = (z·s / (k·x̄))² = (z/k)²·CV². Because
+// required readings grow with the SQUARE of a step's spread, the target is set to
+// a floor-realistic ±15% precision at 90% confidence — tight enough to trust an
+// average, loose enough that a normal step needs only a handful of readings. A
+// stricter target (e.g. ±10% / 95%) would demand dozens of clicks on variable steps.
+// Keep SAMPLE_TARGET_LABEL below in sync with these two values.
+export const SAMPLE_CONFIDENCE_Z = 1.645 // z for 90% two-sided confidence
+export const SAMPLE_PRECISION_K = 0.15 // ±15% of the mean
+
+/** Human-readable form of the target above, so UI copy has one source of truth. */
+export const SAMPLE_TARGET_LABEL = '±15% at 90% confidence'
+
+// Past this many recommended readings, timing more stops being practical — the
+// real fix is standardizing the method, not more stopwatch clicks. The UI reframes
+// its guidance beyond this cap instead of showing a large "+N". At the target
+// above this is roughly a step that swings more than ~40%.
+export const RECOMMENDED_OBS_CAP = 20
 
 const avgOf = (nums: number[]) => (nums.length ? nums.reduce((a, v) => a + v, 0) / nums.length : 0)
 
@@ -75,7 +88,7 @@ export type StepResult = {
   stdDevMs: number // sample std dev of readings (N-1)
   cvPct: number // coefficient of variation = stdDev / avg × 100
   obsCount: number
-  recommendedObs: number | null // cycles for ±10% @ 95%; null when not estimable
+  recommendedObs: number | null // cycles to trust the average (see SAMPLE_TARGET_LABEL); null when not estimable
   enoughObs: boolean
   costPerUnit: number // standard time × wage (per cycle)
   pctOfTotal: number
