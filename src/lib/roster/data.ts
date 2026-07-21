@@ -45,28 +45,31 @@ export async function listRoster(): Promise<RosterRow[]> {
   const supabase = createServiceRoleClient()
 
   // Parallel selects + in-code joins (hand-written types don't model relationships).
-  const [workersRes, obsRes, runsRes, assignRes, stationsRes] = await Promise.all([
+  const [workersRes, obsRes, runsRes, assignRes, stationsRes, gcRes] = await Promise.all([
     supabase.from('workers').select('id, full_name, active').order('full_name', { ascending: true }),
-    supabase.from('observations').select('worker_id, recorded_at').not('worker_id', 'is', null),
-    supabase.from('master_runs').select('worker_id, recorded_at').not('worker_id', 'is', null),
+    supabase.from('observations').select('worker_id, study_id, recorded_at').not('worker_id', 'is', null),
+    supabase.from('master_runs').select('worker_id, study_id, recorded_at').not('worker_id', 'is', null),
     supabase.from('station_assignments').select('worker_id, station_id'),
     supabase.from('stations').select('id, name'),
+    supabase.from('studies').select('id').eq('is_group_check', true),
   ])
-  for (const r of [workersRes, obsRes, runsRes, assignRes, stationsRes]) {
+  for (const r of [workersRes, obsRes, runsRes, assignRes, stationsRes, gcRes]) {
     if (r.error) throw r.error
   }
+  // Group / process checks label who did what but never roll up to roster stats.
+  const excludedStudies = new Set((gcRes.data ?? []).map((s) => s.id))
 
   const obsCount = new Map<string, number>()
   const lastTimed = new Map<string, string>()
   for (const row of obsRes.data ?? []) {
-    if (!row.worker_id) continue
+    if (!row.worker_id || excludedStudies.has(row.study_id)) continue
     obsCount.set(row.worker_id, (obsCount.get(row.worker_id) ?? 0) + 1)
     const prev = lastTimed.get(row.worker_id)
     if (!prev || row.recorded_at > prev) lastTimed.set(row.worker_id, row.recorded_at)
   }
   const runCount = new Map<string, number>()
   for (const row of runsRes.data ?? []) {
-    if (!row.worker_id) continue
+    if (!row.worker_id || excludedStudies.has(row.study_id)) continue
     runCount.set(row.worker_id, (runCount.get(row.worker_id) ?? 0) + 1)
     const prev = lastTimed.get(row.worker_id)
     if (!prev || row.recorded_at > prev) lastTimed.set(row.worker_id, row.recorded_at)
@@ -102,17 +105,22 @@ export async function getWorkerProfile(workerId: string): Promise<WorkerProfile 
   if (error) throw error
   if (!worker) return null
 
-  const [obsRes, runsRes, assignRes] = await Promise.all([
+  const [obsRes, runsRes, assignRes, gcRes] = await Promise.all([
     supabase.from('observations').select('step_id, study_id, duration_ms').eq('worker_id', workerId),
     supabase.from('master_runs').select('study_id, duration_ms').eq('worker_id', workerId),
     supabase.from('station_assignments').select('station_id').eq('worker_id', workerId).maybeSingle(),
+    supabase.from('studies').select('id').eq('is_group_check', true),
   ])
   if (obsRes.error) throw obsRes.error
   if (runsRes.error) throw runsRes.error
   if (assignRes.error) throw assignRes.error
+  if (gcRes.error) throw gcRes.error
 
-  const obs = obsRes.data ?? []
-  const runs = runsRes.data ?? []
+  // Group / process checks label who did what but are excluded from individual
+  // performance, so they never appear on a roster profile.
+  const excludedStudies = new Set((gcRes.data ?? []).map((s) => s.id))
+  const obs = (obsRes.data ?? []).filter((o) => !excludedStudies.has(o.study_id))
+  const runs = (runsRes.data ?? []).filter((r) => !excludedStudies.has(r.study_id))
 
   let stationName: string | null = null
   if (assignRes.data) {

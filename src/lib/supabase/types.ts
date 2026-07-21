@@ -54,6 +54,7 @@ export type Database = {
         wage_rate: number
         allowance_pct: number
         use_whole_timer: boolean
+        is_group_check: boolean
         created_at: string
         updated_at: string
       }>

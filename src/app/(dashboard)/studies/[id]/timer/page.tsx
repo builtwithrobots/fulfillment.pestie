@@ -16,6 +16,7 @@ export default async function TimerPage({ params }: { params: Promise<{ id: stri
       studyId={data.study.id}
       title={data.study.title}
       useWholeTimer={data.study.useWholeTimer}
+      isGroupCheck={data.study.isGroupCheck}
       initialSteps={data.steps}
       initialMasterRuns={data.masterRuns}
       initialWorkers={workers}

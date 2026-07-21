@@ -86,6 +86,7 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
       <p className="mt-1 text-sm text-zinc-500">
         {new Date(study.createdAt).toLocaleDateString()} · {r.steps.length} step
         {r.steps.length !== 1 ? 's' : ''} · {r.timedCount} timed · {r.documentedCount} documented
+        {study.isGroupCheck && <> · <span className="text-amber-600 dark:text-amber-400">Group check</span></>}
       </p>
 
       {/* KPI grid */}
@@ -460,6 +461,11 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
       {perWorker.length > 0 && (
         <Card className="mt-4 overflow-x-auto">
           <CardTitle>By employee</CardTitle>
+          {study.isGroupCheck && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Group / process check — these timings are not counted toward individual roster profiles.
+            </p>
+          )}
           <table className="mt-4 w-full min-w-[32rem] text-sm">
             <thead>
               <tr className="border-b border-zinc-950/10 text-left text-[11px] tracking-wide text-zinc-500 uppercase dark:border-white/10">

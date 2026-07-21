@@ -40,6 +40,7 @@ export function TimerScreen({
   studyId,
   title,
   useWholeTimer,
+  isGroupCheck,
   initialSteps,
   initialMasterRuns,
   initialWorkers,
@@ -48,6 +49,7 @@ export function TimerScreen({
   studyId: string
   title: string
   useWholeTimer: boolean
+  isGroupCheck: boolean
   initialSteps: StepWithObservations[]
   initialMasterRuns: Observation[]
   initialWorkers: WorkerOption[]
@@ -320,6 +322,20 @@ export function TimerScreen({
   /** The worker an observation on this step gets stamped with right now. */
   const workerForStep = (stepId: string) => (stepId in stepWorkers ? stepWorkers[stepId] : workerId)
 
+  // Current value + setter for a step's attribution <Select>, shared by the step
+  // cards and the cycle-card assignment list.
+  const stepWorkerSelectValue = (stepId: string) =>
+    stepId in stepWorkers ? (stepWorkers[stepId] ?? '') : FOLLOW_SESSION
+  function setStepWorker(stepId: string, value: string) {
+    setStepWorkers((prev) => {
+      if (value === FOLLOW_SESSION) {
+        const { [stepId]: _dropped, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [stepId]: value || null }
+    })
+  }
+
   function resetMaster() {
     setMaster((m) => ({ ...m, startTs: null, elapsed: 0 }))
   }
@@ -412,9 +428,11 @@ export function TimerScreen({
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          {workerId
-            ? `Recordings are attributed to ${workerName(workerId)} and appear on their roster profile.`
-            : 'Pick who you’re observing to build their roster profile (optional).'}{' '}
+          {isGroupCheck
+            ? 'Group check — you can label who ran each step, but these timings won’t roll up to roster profiles.'
+            : workerId
+              ? `Recordings are attributed to ${workerName(workerId)} and appear on their roster profile.`
+              : 'Pick who you’re observing to build their roster profile (optional).'}{' '}
           Timing different people on different steps? Override per step below.
         </p>
       </Card>
@@ -489,14 +507,42 @@ export function TimerScreen({
               </div>
             </div>
           ) : (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Button color="emerald" onClick={startCycle}>
-                <Play className="size-4" /> Start cycle
-              </Button>
-              <p className="text-xs text-zinc-500">
-                Tap through the {timedSteps.length} steps in order — each split saves to that step’s assigned person.
-                Assign people per step below.
-              </p>
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button color="emerald" onClick={startCycle}>
+                  <Play className="size-4" /> Start cycle
+                </Button>
+                <p className="text-xs text-zinc-500">
+                  Tap through the {timedSteps.length} steps in order — each split saves to that step’s assigned person.
+                </p>
+              </div>
+              {/* Assign who runs each step, right in the cycle flow. */}
+              <div className="space-y-1.5">
+                {timedSteps.map((s, i) => (
+                  <div key={s.id} className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-zinc-400 tabular-nums">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-zinc-700 dark:text-zinc-200">{s.name}</span>
+                    <Select
+                      value={stepWorkerSelectValue(s.id)}
+                      onChange={(e) => setStepWorker(s.id, e.target.value)}
+                      aria-label={`Person running ${s.name}`}
+                      className="max-w-44"
+                    >
+                      <option value={FOLLOW_SESSION}>
+                        {workerName(workerId) ? `Timing: ${workerName(workerId)}` : 'Session pick'}
+                      </option>
+                      <option value="">— Unattributed —</option>
+                      {workers.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.fullName}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {master.runs.length > 0 && (
@@ -626,17 +672,8 @@ export function TimerScreen({
                     {/* Per-step attribution override, for line studies where
                         different people run different steps simultaneously. */}
                     <Select
-                      value={step.id in stepWorkers ? (stepWorkers[step.id] ?? '') : FOLLOW_SESSION}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setStepWorkers((prev) => {
-                          if (v === FOLLOW_SESSION) {
-                            const { [step.id]: _dropped, ...rest } = prev
-                            return rest
-                          }
-                          return { ...prev, [step.id]: v || null }
-                        })
-                      }}
+                      value={stepWorkerSelectValue(step.id)}
+                      onChange={(e) => setStepWorker(step.id, e.target.value)}
                       aria-label={`Person timed on ${step.name}`}
                       className="ml-auto max-w-48"
                     >
