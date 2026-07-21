@@ -154,7 +154,7 @@ export async function getStudyWithObservations(studyId: string): Promise<{
       .order('recorded_at', { ascending: true }),
     supabase
       .from('master_runs')
-      .select('duration_ms, worker_id')
+      .select('id, duration_ms, worker_id')
       .eq('study_id', studyId)
       .order('recorded_at', { ascending: true }),
   ])
@@ -181,6 +181,6 @@ export async function getStudyWithObservations(studyId: string): Promise<{
   return {
     study: detail,
     steps,
-    masterRuns: (runs ?? []).map((r) => ({ durationMs: r.duration_ms, workerId: r.worker_id })),
+    masterRuns: (runs ?? []).map((r) => ({ id: r.id, durationMs: r.duration_ms, workerId: r.worker_id })),
   }
 }
