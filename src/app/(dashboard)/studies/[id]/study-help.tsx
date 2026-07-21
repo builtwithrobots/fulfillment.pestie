@@ -5,6 +5,7 @@ import { useState } from 'react'
 
 import { Button } from '@/components/button'
 import { Dialog, DialogActions, DialogBody, DialogTitle } from '@/components/dialog'
+import { SAMPLE_TARGET_LABEL } from '@/lib/time-study'
 
 /** Info icon + modal: how the timer, the math, and the tool work, in plain terms. */
 export function StudyHelp() {
@@ -85,9 +86,11 @@ export function StudyHelp() {
                 as one).
               </li>
               <li>
-                <span className="font-medium text-zinc-950 dark:text-white">Enough cycles</span> — from the spread, the
-                tool suggests how many repeats you need to trust the average (±10% at 95% confidence). A{' '}
-                <span className="font-medium">(+N)</span> means keep timing; a ✓ means you&apos;re there.
+                <span className="font-medium text-zinc-950 dark:text-white">Reliability</span> — each timed step gets a
+                plain badge (Solid / Rough / Low confidence) from how steady it is and how many times it&apos;s been
+                timed. Tap it for the spread, the readings so far, and how many more are suggested to trust the average (
+                {SAMPLE_TARGET_LABEL}). A step that swings too much to pin down by timing is flagged to standardize the
+                method first.
               </li>
               <li>
                 <span className="font-medium text-zinc-950 dark:text-white">Bottleneck</span> — the slowest step(s).
