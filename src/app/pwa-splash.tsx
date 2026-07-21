@@ -1,6 +1,7 @@
 'use client'
 
 import { BugOff } from 'lucide-react'
+import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
 /**
@@ -13,9 +14,14 @@ import { useEffect, useState } from 'react'
  * after ~1.2s so it can never block the app.
  */
 export function PwaSplash() {
+  const pathname = usePathname()
+  // The print/export route shows its own graceful "generating" overlay, so the
+  // branded splash must not paint over it there.
+  const onPrintRoute = pathname?.includes('/results/print') ?? false
   const [phase, setPhase] = useState<'hidden' | 'shown' | 'leaving'>('hidden')
 
   useEffect(() => {
+    if (onPrintRoute) return
     const standalone =
       window.matchMedia?.('(display-mode: standalone)').matches ||
       window.matchMedia?.('(display-mode: fullscreen)').matches ||
@@ -32,9 +38,9 @@ export function PwaSplash() {
       clearTimeout(leave)
       clearTimeout(done)
     }
-  }, [])
+  }, [onPrintRoute])
 
-  if (phase === 'hidden') return null
+  if (onPrintRoute || phase === 'hidden') return null
 
   return (
     <div

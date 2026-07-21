@@ -1,6 +1,7 @@
 'use client'
 
-import { ArrowLeft, Printer } from 'lucide-react'
+import { ArrowLeft, Loader2, Printer } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { Button } from '@/components/button'
 import type { StudyDetail } from '@/lib/studies/data'
@@ -39,6 +40,22 @@ export function PrintView({
   masterRuns: Observation[]
   workerNames: Record<string, string>
 }) {
+  // Graceful "generating" overlay while the report paints — replaces the branded
+  // PWA splash on this route (see pwa-splash.tsx). Visible on first paint, fills
+  // a progress bar, then fades out. print:hidden so it never lands in the PDF.
+  const [phase, setPhase] = useState<'busy' | 'leaving' | 'done'>('busy')
+  const [progress, setProgress] = useState(0)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setProgress(100))
+    const leave = setTimeout(() => setPhase('leaving'), 1300)
+    const done = setTimeout(() => setPhase('done'), 1650)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(leave)
+      clearTimeout(done)
+    }
+  }, [])
+
   const wage = study.wageRate
   const r = computeResults(steps, wage, masterRuns, study.allowancePct)
   const perWorker = computePerWorker(steps, masterRuns)
@@ -71,6 +88,28 @@ export function PrintView({
 
   return (
     <div className="min-h-svh bg-zinc-200 text-zinc-900 dark:bg-zinc-800 print:bg-white">
+      {/* Graceful export-generating overlay (never printed) */}
+      {phase !== 'done' && (
+        <div
+          aria-hidden
+          className={`fixed inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-white transition-opacity duration-300 dark:bg-zinc-900 print:hidden ${
+            phase === 'leaving' ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          <Loader2 className="size-10 animate-spin text-green-600" />
+          <div className="text-center">
+            <div className="text-lg font-semibold text-zinc-900 dark:text-white">Generating your export…</div>
+            <div className="mt-1 text-sm text-zinc-500">Preparing your printable report</div>
+          </div>
+          <div className="h-1.5 w-56 overflow-hidden rounded-full bg-zinc-200 dark:bg-white/10">
+            <div
+              className="h-full rounded-full bg-green-600 transition-[width] duration-[1200ms] ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <style>{`
         @page { size: letter portrait; margin: 0.5in; }
         @media print {
@@ -117,6 +156,31 @@ export function PrintView({
           </p>
         )}
 
+        {/* AI analysis & recommendations -- only when one has been generated + saved */}
+        {study.aiAnalysis && (
+          <>
+            <h2 className="mt-6 text-sm font-semibold tracking-wider text-zinc-500 uppercase">
+              Analysis &amp; recommendations
+            </h2>
+            <p className="mt-2 text-xs leading-relaxed">{study.aiAnalysis.summary}</p>
+            <ol className="mt-2 space-y-1.5">
+              {study.aiAnalysis.recommendations.map((rec, i) => (
+                <li key={i} className="flex gap-2 text-xs leading-relaxed">
+                  <span className="font-semibold tabular-nums">{i + 1}.</span>
+                  <span>
+                    <span className="font-semibold">{rec.title}.</span> {rec.detail}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {study.aiAnalysis.generatedAt && (
+              <p className="mt-1.5 text-[10px] text-zinc-400">
+                AI-generated {formatDate(study.aiAnalysis.generatedAt)} — sanity-check against the figures above.
+              </p>
+            )}
+          </>
+        )}
+
         {/* Step detail (with notes) */}
         <h2 className="mt-6 text-sm font-semibold tracking-wider text-zinc-500 uppercase">Step detail</h2>
         <table className="mt-2 w-full text-xs">
@@ -127,8 +191,6 @@ export function PrintView({
               <th className={th}>Avg</th>
               <th className={th}>Fastest</th>
               <th className={th}>Slowest</th>
-              <th className={th}>Std dev</th>
-              <th className={th}>CV</th>
               <th className={th}>Obs</th>
               <th className={th}>Cost/unit</th>
               <th className={`${th} pr-0`}>% of total</th>
@@ -155,11 +217,11 @@ export function PrintView({
                     {s.notes && <div className="mt-0.5 text-[11px] text-zinc-500 italic">{s.notes}</div>}
                   </td>
                   {!s.timed ? (
-                    <td className={td} colSpan={8}>
+                    <td className={td} colSpan={6}>
                       —
                     </td>
                   ) : s.obsCount === 0 ? (
-                    <td className={`${td} text-zinc-400`} colSpan={8}>
+                    <td className={`${td} text-zinc-400`} colSpan={6}>
                       No observations
                     </td>
                   ) : (
@@ -167,8 +229,6 @@ export function PrintView({
                       <td className={`${td} font-mono tabular-nums`}>{fmtMs(s.avgMs)}</td>
                       <td className={`${td} font-mono tabular-nums`}>{sp ? fmtMs(sp.minMs) : '—'}</td>
                       <td className={`${td} font-mono tabular-nums`}>{sp ? fmtMs(sp.maxMs) : '—'}</td>
-                      <td className={`${td} font-mono tabular-nums`}>{s.obsCount > 1 ? fmtMs(s.stdDevMs) : '—'}</td>
-                      <td className={td}>{s.obsCount > 1 ? `${s.cvPct.toFixed(0)}%` : '—'}</td>
                       <td className={td}>{s.obsCount}</td>
                       <td className={`${td} font-mono tabular-nums`}>{money(s.costPerUnit, wage)}</td>
                       <td className={`${td} pr-0`}>{s.pctOfTotal.toFixed(1)}%</td>
@@ -308,14 +368,7 @@ export function PrintView({
           </>
         )}
 
-        <p className="mt-6 text-[10px] text-zinc-400">
-          Pestie Fulfillment · Time Study Tool · Avg is the per-step observation mean (observed time); cycle time is the
-          sum of step averages.{' '}
-          {hasAllowance
-            ? `Standard time = observed × (1 + ${r.allowancePct}% PF&D); cost = standard time × $${wage}/hr.`
-            : `Cost = time × $${wage}/hr.`}{' '}
-          CV = std dev ÷ avg; std dev is sample (N−1).
-        </p>
+        <p className="mt-6 text-[10px] text-zinc-400">© 2026 Pestie Fulfillment - Time Study Tool</p>
       </div>
     </div>
   )

@@ -55,6 +55,11 @@ export type Database = {
         allowance_pct: number
         use_whole_timer: boolean
         is_group_check: boolean
+        ai_analysis: {
+          summary: string
+          recommendations: { title: string; detail: string }[]
+          generatedAt?: string
+        } | null
         created_at: string
         updated_at: string
       }>

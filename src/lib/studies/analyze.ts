@@ -1,9 +1,11 @@
 'use server'
 
 import Anthropic from '@anthropic-ai/sdk'
+import { revalidatePath } from 'next/cache'
 
 import type { ActionResult } from '@/lib/action-result'
-import { computeResults, fmtMs, RECOMMENDED_OBS_CAP, type StudyResults } from '@/lib/time-study'
+import { createServiceRoleClient } from '@/lib/supabase/server'
+import { computeResults, fmtMs, RECOMMENDED_OBS_CAP, type StudyAnalysis, type StudyResults } from '@/lib/time-study'
 import { getStudyWithObservations, requireUserId } from './data'
 
 /**
@@ -19,10 +21,7 @@ import { getStudyWithObservations, requireUserId } from './data'
  * deterministic bottleneck summary.
  */
 
-export type StudyAnalysis = {
-  summary: string
-  recommendations: { title: string; detail: string }[]
-}
+export type { StudyAnalysis }
 
 // Best available model for this reasoning task. Not user-configurable here.
 const MODEL = 'claude-opus-4-8'
@@ -209,7 +208,17 @@ export async function analyzeStudy(studyId: string): Promise<ActionResult<StudyA
     const final = await stream.finalMessage()
     const parsed = parseAnalysis(extractText(final.content))
     if (!parsed) return { ok: false, error: 'The AI response could not be read. Please try again.' }
-    return { ok: true, data: parsed }
+
+    // Persist the analysis on the study so it survives a refresh, renders on the
+    // results screen without re-running, and prints in the PDF export.
+    const analysis: StudyAnalysis = { ...parsed, generatedAt: new Date().toISOString() }
+    const supabase = createServiceRoleClient()
+    const { error: saveError } = await supabase.from('studies').update({ ai_analysis: analysis }).eq('id', studyId)
+    if (saveError) return { ok: false, error: saveError.message }
+
+    revalidatePath(`/studies/${studyId}/results`)
+    revalidatePath(`/studies/${studyId}/results/print`)
+    return { ok: true, data: analysis }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown error'
     return { ok: false, error: `Analysis failed: ${msg}` }
