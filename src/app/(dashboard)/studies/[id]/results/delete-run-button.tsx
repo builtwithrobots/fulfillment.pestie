@@ -56,8 +56,9 @@ export function DeleteRunButton({
       <Dialog open={open} onClose={setOpen} size="sm">
         <DialogTitle>Delete {label}?</DialogTitle>
         <DialogBody className="text-sm text-zinc-600 dark:text-zinc-300">
-          This removes the <span className="font-mono font-medium">{time}</span> full-process run from this study. The
-          average, fastest/slowest, standard deviation, and consistency band all recalculate. This can&apos;t be undone.
+          This removes the <span className="font-mono font-medium">{time}</span>{' '}
+          full-process run from this study. The average, fastest/slowest, standard deviation, and consistency band all
+          recalculate. This can&apos;t be undone.
           {error && <span className="mt-2 block text-red-600 dark:text-red-400">Couldn&apos;t delete: {error}</span>}
         </DialogBody>
         <DialogActions>
