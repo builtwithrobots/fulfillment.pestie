@@ -9,6 +9,8 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 
 export type AppRole = 'director' | 'supervisor' | 'floor_lead' | 'executive'
 
+export type ShiftKitStatus = 'on_track' | 'at_risk' | 'will_not_complete'
+
 export type FloorShapeKind = 'area' | 'station' | 'label' | 'arrow' | 'figure'
 export type FloorShapeGeometry = 'rect' | 'circle'
 
@@ -128,6 +130,38 @@ export type Database = {
         station_id: string
         worker_id: string
         assigned_at: string
+      }>
+      shift_plans: Table<{
+        id: string
+        created_at: string
+        created_by: string
+        shift_date: string
+        shift_start_time: string
+        available_headcount: number
+        fak_qty: number
+        rak_qty: number
+        uyak_qty: number
+        rec_fak_rak_workers: number | null
+        rec_uyak_stations: number | null
+        rec_tape_scan_workers: number | null
+        rec_assembly_workers: number | null
+        rec_assembly_lines: number | null
+        rec_material_handling: number | null
+        rec_replenishment: number | null
+        est_fak_completion_min: number | null
+        est_rak_completion_min: number | null
+        est_uyak_completion_min: number | null
+        est_assembly_completion_min: number | null
+        flex_recommendations: Json | null
+        fak_status: ShiftKitStatus | null
+        rak_status: ShiftKitStatus | null
+        uyak_status: ShiftKitStatus | null
+        actual_headcount: number | null
+        actual_fak_completed: number | null
+        actual_rak_completed: number | null
+        actual_uyak_completed: number | null
+        actual_shift_end_time: string | null
+        notes: string | null
       }>
     }
     Views: Record<string, never>
